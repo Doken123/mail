@@ -1,15 +1,12 @@
 /* ===================
-   TempMail — hybrid
+   TempMail — Guerrilla Mail
    =================== */
 
-const MT = "https://api.mail.tm";
-const TL = "https://api.tempmail.lol/v2";
+const GAPI = "https://api.guerrillamail.com/ajax.php";
 
 const state = {
-  provider: null,      // "mailtm" | "templol" | "manual"
-  token: null,         // mail.tm token atau tempmail.lol token
+  sid: null,       // session id Guerrilla
   address: null,
-  password: null,
   messages: [],
   saved: [],
   pollId: null,
@@ -38,7 +35,7 @@ const modalContent = $("modalContent");
 const toast = $("toast");
 
 /* ===================
-   NAMA RANDOM
+   NAMA RANDOM (untuk tampilan saja)
    =================== */
 
 const FIRST = ["budi","andi","rizky","dimas","fajar","gilang","hafiz","ivan","joko",
@@ -60,13 +57,6 @@ function randomName() {
   const l = LAST[Math.floor(Math.random() * LAST.length)];
   const n = Math.floor(Math.random() * 9000) + 100;
   return (f + l + n).toLowerCase();
-}
-
-function randomPass() {
-  let s = "";
-  const c = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (let i = 0; i < 16; i++) s += c[Math.floor(Math.random() * c.length)];
-  return s;
 }
 
 /* ===================
@@ -98,159 +88,85 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
-function sleep(ms) {
-  return new Promise(function (r) { setTimeout(r, ms); });
+function qs(params) {
+  const parts = [];
+  for (const k in params) {
+    parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k]));
+  }
+  return parts.join("&");
 }
 
-function req(url, method, body, headers) {
-  const opts = {
-    method: method || "GET",
-    headers: Object.assign({ "Content-Type": "application/json" }, headers || {}),
-    cache: "no-store",
-  };
-  if (body) opts.body = JSON.stringify(body);
-
-  return fetch(url, opts).then(function (res) {
-    if (res.status === 204) return null;
-    return res.text().then(function (txt) {
-      let data = null;
-      try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = txt; }
-      if (!res.ok) {
-        const msg = (data && (data.message || data.error)) || ("HTTP " + res.status);
-        throw new Error(msg);
-      }
+function gapi(params, extra) {
+  const url = GAPI + "?" + qs(params);
+  return fetch(url, { cache: "no-store" }).then(function (r) {
+    return r.json().then(function (data) {
+      if (!r.ok) throw new Error((data && data.error) || ("HTTP " + r.status));
       return data;
     });
   });
 }
 
 /* ===================
-   PROVIDER: mail.tm
+   GUERRILLA API
    =================== */
 
-function mtDomain() {
-  return req(MT + "/domains?page=1", "GET").then(function (d) {
-    const list = d["hydra:member"] || d;
-    if (!list || !list.length) throw new Error("no domain");
-    const active = list.filter(function (x) { return x.isActive !== false; });
-    const pick = active.length ? active[Math.floor(Math.random() * active.length)] : list[0];
-    return pick.domain;
-  });
+// Buat inbox baru
+function createInbox() {
+  return gapi({ f: "get_email_address", lang: "en" })
+    .then(function (d) {
+      if (!d || !d.email_addr) throw new Error("no address");
+      state.sid = d.sid_token || null;
+      state.address = d.email_addr;
+      return d.email_addr;
+    });
 }
 
-function mtCreate(retries) {
-  retries = retries == null ? 3 : retries;
-  let addr, pass;
-  return mtDomain().then(function (domain) {
-    addr = randomName() + "@" + domain;
-    pass = randomPass();
-    return req(MT + "/accounts", "POST", { address: addr, password: pass });
-  }).then(function () {
-    return req(MT + "/token", "POST", { address: addr, password: pass });
-  }).then(function (login) {
-    state.provider = "mailtm";
-    state.token = login.token;
-    state.address = addr;
-    state.password = pass;
-    return addr;
-  }).catch(function (err) {
-    if (retries > 0) {
-      return sleep(700).then(function () { return mtCreate(retries - 1); });
-    }
-    throw err;
-  });
-}
+// Ambil daftar pesan
+function fetchMessages() {
+  const params = { f: "get_email_list", offset: 0 };
+  if (state.sid) params.sid_token = state.sid;
 
-function mtMessages() {
-  return req(MT + "/messages?page=1", "GET", null, {
-    Authorization: "Bearer " + state.token,
-  }).then(function (d) {
-    const list = d["hydra:member"] || d || [];
+  return gapi(params).then(function (d) {
+    const list = (d && d.list) || [];
     return list.map(function (m) {
       return {
-        id: m.id,
-        from: (m.from && m.from.address) || "unknown",
-        subject: m.subject || "(no subject)",
-        date: m.createdAt,
+        id: m.mail_id,
+        from: m.mail_from || "unknown",
+        subject: m.mail_subject || "(no subject)",
+        date: m.mail_timestamp
+          ? new Date(m.mail_timestamp * 1000).toISOString()
+          : new Date().toISOString(),
       };
     });
   });
 }
 
-function mtMessage(id) {
-  return req(MT + "/messages/" + id, "GET", null, {
-    Authorization: "Bearer " + state.token,
-  }).then(function (msg) {
+// Ambil isi pesan
+function fetchMessage(id) {
+  const params = { f: "fetch_email", email_id: id };
+  if (state.sid) params.sid_token = state.sid;
+
+  return gapi(params).then(function (msg) {
     return {
-      subject: msg.subject || "(no subject)",
-      from: (msg.from && msg.from.address) || "unknown",
-      text: msg.text || "",
-      html: Array.isArray(msg.html) ? msg.html.join("") : (msg.html || ""),
+      subject: msg.mail_subject || "(no subject)",
+      from: msg.mail_from || "unknown",
+      text: msg.mail_body || "",
     };
   });
 }
 
-/* ===================
-   PROVIDER: tempmail.lol
-   =================== */
+// Set nama random biar alamatnya pakai nama orang
+function setName(name) {
+  const params = { f: "set_email_user", email_user: name, lang: "en" };
+  if (state.sid) params.sid_token = state.sid;
 
-function tlCreate() {
-  return req(TL + "/inbox/create", "POST", {}).then(function (d) {
-    if (!d || !d.address) throw new Error("no address");
-    state.provider = "templol";
-    state.token = d.token;
-    state.address = d.address;
-    state.password = null;
-    return d.address;
-  });
-}
-
-function tlMessages() {
-  return req(TL + "/inbox?token=" + encodeURIComponent(state.token), "GET")
-    .then(function (d) {
-      const list = (d && d.emails) || [];
-      return list.map(function (m, i) {
-        return {
-          id: m.id || String(i),
-          from: m.from || "unknown",
-          subject: m.subject || "(no subject)",
-          date: m.date ? new Date(m.date * 1000).toISOString() : new Date().toISOString(),
-          _raw: m,
-        };
-      });
-    });
-}
-
-function tlMessage(id) {
-  // tempmail.lol: pesan sudah lengkap di list, ambil dari cache
-  for (let i = 0; i < state.messages.length; i++) {
-    if (state.messages[i].id === id) {
-      const m = state.messages[i]._raw || {};
-      return Promise.resolve({
-        subject: m.subject || "(no subject)",
-        from: m.from || "unknown",
-        text: m.body || m.text || "",
-        html: m.html || "",
-      });
+  return gapi(params).then(function (d) {
+    if (d && d.email_addr) {
+      state.address = d.email_addr;
+      return d.email_addr;
     }
-  }
-  return Promise.reject(new Error("not found"));
-}
-
-/* ===================
-   PROVIDER WRAPPER
-   =================== */
-
-function fetchMessages() {
-  if (state.provider === "mailtm") return mtMessages();
-  if (state.provider === "templol") return tlMessages();
-  return Promise.resolve([]);
-}
-
-function fetchMessage(id) {
-  if (state.provider === "mailtm") return mtMessage(id);
-  if (state.provider === "templol") return tlMessage(id);
-  return Promise.reject(new Error("no provider"));
+    return state.address;
+  });
 }
 
 /* ===================
@@ -362,7 +278,6 @@ function openMessage(id) {
     modalFrom.textContent = msg.from || "unknown";
     let body = "";
     if (msg.text) body = esc(msg.text).replace(/\n/g, "<br>");
-    else if (msg.html) body = msg.html;
     else body = "(empty message)";
     modalContent.innerHTML = body;
     modal.classList.add("active");
@@ -387,14 +302,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v3") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v4") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_v3", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v4", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
@@ -410,10 +325,8 @@ function toggleSave() {
     showToast("dihapus dari saved");
   } else {
     state.saved.unshift({
-      provider: state.provider,
       email: state.address,
-      token: state.token,
-      password: state.password,
+      sid: state.sid,
       savedAt: new Date().toISOString(),
     });
     showToast("email disimpan");
@@ -436,49 +349,22 @@ function useSavedEmail(email) {
   for (let i = 0; i < state.saved.length; i++) {
     if (state.saved[i].email === email) { found = state.saved[i]; break; }
   }
-  if (!found) { showToast("email tidak ditemukan"); return; }
+  if (!found || !found.sid) {
+    showToast("tidak bisa dipakai ulang");
+    return;
+  }
 
   clearInterval(state.pollId);
+  state.sid = found.sid;
+  state.address = found.email;
+  state.messages = [];
 
-  if (found.provider === "templol" && found.token) {
-    state.provider = "templol";
-    state.token = found.token;
-    state.address = found.email;
-    state.password = null;
-    state.messages = [];
-    emailAddressEl.textContent = found.email;
-    updateSaveButton();
-    renderMessages();
-    startPolling();
-    refreshMessages(true);
-    showToast("email dipakai");
-    return;
-  }
-
-  if (found.provider === "mailtm" && found.password) {
-    req(MT + "/token", "POST", {
-      address: found.email,
-      password: found.password,
-    }).then(function (login) {
-      state.provider = "mailtm";
-      state.token = login.token;
-      state.address = found.email;
-      state.password = found.password;
-      state.messages = [];
-      emailAddressEl.textContent = found.email;
-      updateSaveButton();
-      renderMessages();
-      startPolling();
-      return refreshMessages(true);
-    }).then(function () {
-      showToast("email dipakai");
-    }).catch(function () {
-      showToast("gagal pakai email");
-    });
-    return;
-  }
-
-  showToast("email ini tidak bisa dipakai ulang");
+  emailAddressEl.textContent = found.email;
+  updateSaveButton();
+  renderMessages();
+  startPolling();
+  refreshMessages(true);
+  showToast("email dipakai");
 }
 
 /* ===================
@@ -511,6 +397,7 @@ function fallbackCopy(text) {
    =================== */
 
 function refreshMessages(silent) {
+  if (!state.address) return Promise.resolve();
   return fetchMessages().then(function (list) {
     const changed = list.length !== state.messages.length;
     state.messages = list;
@@ -533,10 +420,8 @@ function startPolling() {
 
 function createNewEmail() {
   clearInterval(state.pollId);
-  state.provider = null;
-  state.token = null;
+  state.sid = null;
   state.address = null;
-  state.password = null;
   state.messages = [];
 
   emailAddressEl.textContent = "loading...";
@@ -544,30 +429,21 @@ function createNewEmail() {
   messageNumberEl.textContent = "0";
   mailCountEl.textContent = "0 messages";
 
-  mtCreate(2)
+  createInbox()
+    .then(function () {
+      // set nama random biar alamatnya lebih manusiawi
+      return setName(randomName());
+    })
     .then(function (address) {
       emailAddressEl.textContent = address;
       updateSaveButton();
       startPolling();
       return refreshMessages(true);
     })
-    .catch(function () {
-      // fallback ke tempmail.lol
-      return tlCreate().then(function (address) {
-        emailAddressEl.textContent = address;
-        updateSaveButton();
-        startPolling();
-        return refreshMessages(true);
-      });
-    })
-    .catch(function () {
-      // dua-duanya gagal — tetap tampilkan alamat manual biar bisa copy
-      const addr = randomName() + "@mail.tm";
-      state.provider = "manual";
-      state.address = addr;
-      emailAddressEl.textContent = addr;
-      updateSaveButton();
-      showToast("server sibuk, tekan New");
+    .catch(function (err) {
+      console.error(err);
+      emailAddressEl.textContent = "gagal, tekan New";
+      showToast("gagal buat email, tekan New");
     });
 }
 
