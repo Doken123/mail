@@ -107,141 +107,157 @@ function gapi(params) {
 }
 
 /* ===================
-   MIME PARSER (BRUTAL)
+   MIME PARSER
    =================== */
 
-function decodeQP(str) {
-  if (!str) return "";
-  return str
-    .replace(/=\r?\n/g, "")
-    .replace(/=([0-9A-Fa-f]{2})/g, function (_, h) {
-      return String.fromCharCode(parseInt(h, 16));
-    });
-}
-
-function tryBase64(str) {
+function bytesToString(bytes, charset) {
   try {
-    return decodeURIComponent(escape(atob(str.replace(/\s/g, ""))));
+    return new TextDecoder(charset || "utf-8").decode(bytes);
   } catch (e) {
-    try { return atob(str.replace(/\s/g, "")); } catch (e2) { return str; }
+    return new TextDecoder("utf-8").decode(bytes);
   }
 }
 
-function extractByContentType(body, type, boundary) {
-  // cari "Content-Type: <type>" lalu ambil setelah baris kosong,
-  // sampai boundary berikutnya (atau EOF)
-  const typeRe = new RegExp("Content-Type:\\s*" + type + "[^\\r\\n]*", "i");
-  const m = body.match(typeRe);
-  if (!m) return "";
-  const start = m.index;
-
-  // cari akhir part
-  let rest = body.slice(start);
-  // buang baris Content-Type
-  const nl = rest.search(/\r?\n/);
-  if (nl === -1) return "";
-  rest = rest.slice(nl + 1);
-
-  // skip baris header lain (Content-Transfer-Encoding, dll)
-  while (true) {
-    const lineMatch = rest.match(/^([^\r\n]+)\r?\n/);
-    if (!lineMatch) break;
-    const line = lineMatch[1];
-    // header MIME biasanya mengandung ":" (Xxx: ...)
-    if (/^[A-Za-z\-]+:\s/.test(line)) {
-      rest = rest.slice(lineMatch[0].length);
+function decodeQPBytes(str) {
+  str = str.replace(/=\r?\n/g, "");
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (c === "=" && /^[0-9A-Fa-f]{2}$/.test(str.substr(i + 1, 2))) {
+      out.push(parseInt(str.substr(i + 1, 2), 16));
+      i += 2;
     } else {
-      break;
+      const code = str.charCodeAt(i);
+      if (code < 128) out.push(code);
+      else {
+        const enc = new TextEncoder().encode(c);
+        for (let k = 0; k < enc.length; k++) out.push(enc[k]);
+      }
     }
   }
+  return new Uint8Array(out);
+}
 
-  // buang baris kosong pemisah
-  rest = rest.replace(/^\r?\n/, "");
+function decodeBody(body, encoding, charset) {
+  encoding = (encoding || "").toLowerCase().trim();
+  try {
+    if (encoding === "base64") {
+      const bin = atob(body.replace(/[^A-Za-z0-9+\/=]/g, ""));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytesToString(bytes, charset);
+    }
+    if (encoding === "quoted-printable") {
+      return bytesToString(decodeQPBytes(body), charset);
+    }
+  } catch (e) {}
+  return body;
+}
 
-  // potong sampai boundary berikutnya
-  if (boundary) {
-    const re = new RegExp("\\r?\\n--" + boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const end = rest.search(re);
-    if (end !== -1) rest = rest.slice(0, end);
+function parseHeaders(str) {
+  const h = {};
+  const unfolded = str.replace(/\r?\n[ \t]+/g, " ");
+  unfolded.split(/\r?\n/).forEach(function (line) {
+    const m = line.match(/^([A-Za-z0-9\-]+):\s*(.*)$/);
+    if (m) h[m[1].toLowerCase()] = m[2];
+  });
+  return h;
+}
+
+function headerParam(value, name) {
+  if (!value) return "";
+  const re = new RegExp(name + '\\s*=\\s*(?:"([^"]*)"|([^;\\s]+))', "i");
+  const m = value.match(re);
+  return m ? (m[1] !== undefined ? m[1] : m[2]) : "";
+}
+
+function splitEntity(raw) {
+  raw = raw.replace(/^(\r?\n)+/, "");
+  // kalau diawali header (Xxx: ...), pisahin header & body
+  if (/^[A-Za-z0-9\-]+:[ \t]/.test(raw)) {
+    const m = raw.match(/\r?\n\r?\n/);
+    if (m) {
+      return {
+        headers: parseHeaders(raw.slice(0, m.index)),
+        body: raw.slice(m.index + m[0].length),
+      };
+    }
+    return { headers: parseHeaders(raw), body: "" };
+  }
+  return { headers: {}, body: raw };
+}
+
+function splitMultipart(body, boundary) {
+  const b = boundary.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+  const re = new RegExp("(?:^|\\r?\\n)--" + b + "(--)?[ \\t]*(?=\\r?\\n|$)");
+  const parts = [];
+  let rest = body;
+  let first = true;
+  while (true) {
+    const m = rest.match(re);
+    if (!m) {
+      if (!first) parts.push(rest);
+      break;
+    }
+    if (!first) parts.push(rest.slice(0, m.index));
+    first = false;
+    rest = rest.slice(m.index + m[0].length);
+    if (m[1] === "--") break;
+  }
+  return parts;
+}
+
+function parseEntity(raw, out, depth) {
+  if (depth > 6) return;
+  const ent = splitEntity(raw);
+  const h = ent.headers;
+  let body = ent.body;
+  let ct = (h["content-type"] || "").toLowerCase();
+  let boundary = headerParam(h["content-type"], "boundary");
+
+  // mail_body dari guerrilla sering langsung mulai dari "--boundary" tanpa header
+  if (!boundary && !ct) {
+    const bm = body.match(/^\s*--([^\s]{6,})[ \t]*\r?\n/);
+    if (bm) { boundary = bm[1]; ct = "multipart/mixed"; }
   }
 
-  return rest.trim();
+  if (ct.indexOf("multipart/") === 0 && boundary) {
+    splitMultipart(body, boundary).forEach(function (p) {
+      parseEntity(p, out, depth + 1);
+    });
+    return;
+  }
+
+  const disp = (h["content-disposition"] || "").toLowerCase();
+  if (disp.indexOf("attachment") === 0) return;
+
+  const charset = headerParam(h["content-type"], "charset") || "utf-8";
+  const enc = h["content-transfer-encoding"];
+
+  if (ct.indexOf("text/html") === 0) {
+    out.html += decodeBody(body, enc, charset);
+  } else if (ct.indexOf("text/plain") === 0 || !ct) {
+    const decoded = decodeBody(body, enc, charset);
+    if (!ct && /<(html|body|div|table|p|br|a|span)[\s>\/]/i.test(decoded)) {
+      out.html += decoded;
+    } else {
+      out.text += decoded;
+    }
+  }
+  // tipe lain (image, pdf, dll) diabaikan
 }
 
 function parseMime(raw) {
-  if (!raw) return { html: "", text: "" };
+  const out = { html: "", text: "" };
+  if (!raw) return out;
 
-  // 1) buang <pre> wrapper
-  let body = raw.replace(/<\/?pre[^>]*>/gi, "");
+  // buang <pre> wrapper kalau ada
+  const body = raw.replace(/^\s*<pre[^>]*>/i, "").replace(/<\/pre>\s*$/i, "");
+  parseEntity(body, out, 0);
 
-  // 2) buang header email utama (kalau ada)
-  const headMatch = body.match(/^([\s\S]*?)\r?\n\r?\n/);
-  if (headMatch) {
-    const head = headMatch[1];
-    if (/^(delivered-to|received|return-path|arc-|dkim|authentication-results|mime-version|from:|to:|subject:|date:|reply-to:)/im.test(head)) {
-      body = body.slice(headMatch[0].length);
-    }
-  }
-
-  // 3) cari boundary: baris yang isinya hanya "--xxxxx" (min 15 char)
-  let boundary = "";
-  const bm = body.match(/^\s*--([A-Za-z0-9=_\-.+]{15,})\s*$/m);
-  if (bm) boundary = bm[1];
-
-  let htmlPart = "";
-  let textPart = "";
-
-  if (boundary) {
-    htmlPart = extractByContentType(body, "text\\/html", boundary);
-    textPart = extractByContentType(body, "text\\/plain", boundary);
-  }
-
-  // 4) fallback: kalau boundary nggak ketemu / hasil kosong, cari manual
-  if (!htmlPart && !textPart) {
-    const hIdx = body.search(/Content-Type:\s*text\/html/i);
-    if (hIdx !== -1) {
-      let rest = body.slice(hIdx);
-      const nl = rest.search(/\r?\n\r?\n/);
-      if (nl !== -1) rest = rest.slice(nl);
-      const end = rest.search(/\r?\n--/);
-      if (end !== -1) rest = rest.slice(0, end);
-      // buang sisa --xxxx di akhir
-      rest = rest.replace(/--[A-Za-z0-9=_\-.+]+\s*$/m, "");
-      htmlPart = rest.trim();
-    }
-    if (!htmlPart) {
-      const pIdx = body.search(/Content-Type:\s*text\/plain/i);
-      if (pIdx !== -1) {
-        let rest = body.slice(pIdx);
-        const nl = rest.search(/\r?\n\r?\n/);
-        if (nl !== -1) rest = rest.slice(nl);
-        const end = rest.search(/\r?\n--/);
-        if (end !== -1) rest = rest.slice(0, end);
-        rest = rest.replace(/--[A-Za-z0-9=_\-.+]+\s*$/m, "");
-        textPart = rest.trim();
-      }
-    }
-  }
-
-  // 5) decode quoted-printable / base64 sederhana
-  if (htmlPart && /=[0-9A-Fa-f]{2}/.test(htmlPart)) htmlPart = decodeQP(htmlPart);
-  if (textPart && /=[0-9A-Fa-f]{2}/.test(textPart)) textPart = decodeQP(textPart);
-
-  // 6) fallback terakhir: kalau nggak ada MIME sama sekali
-  if (!htmlPart && !textPart) {
-    if (/<html|<body|<div|<table|<a\s|<p[ >]|<br/i.test(body)) {
-      const m = body.match(/<html[\s\S]*<\/html>/i);
-      if (m) htmlPart = m[0];
-      else {
-        const b = body.match(/<body[\s\S]*<\/body>/i);
-        htmlPart = b ? b[0] : body;
-      }
-    } else {
-      textPart = decodeQP(body);
-    }
-  }
-
-  return { html: htmlPart, text: textPart };
+  out.html = out.html.trim();
+  out.text = out.text.trim();
+  return out;
 }
 
 /* ===================
@@ -287,15 +303,19 @@ function fetchMessage(id) {
     let text = "";
     let isHtml = false;
 
-    if (parsed.html && parsed.html.trim().length > 5) {
+    const htmlVisible = parsed.html
+      .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, "")
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .trim();
+
+    if (parsed.html && (htmlVisible.length > 0 || /<img/i.test(parsed.html))) {
       text = parsed.html;
       isHtml = true;
-    } else if (parsed.text && parsed.text.trim().length > 0) {
+    } else if (parsed.text) {
       text = parsed.text;
-      isHtml = false;
     } else {
-      text = "(empty message)";
-      isHtml = false;
+      text = "(pesan kosong)";
     }
 
     return {
