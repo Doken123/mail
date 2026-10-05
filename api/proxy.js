@@ -1,43 +1,47 @@
-module.exports = async function handler(req, res) {
+const ALLOWED = ["https://api.mail.tm/", "https://api.mail.gw/"];
+
+module.exports = async (req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
 
   if (req.method === "OPTIONS") {
-    res.status(204).end();
-    return;
+    res.statusCode = 204;
+    return res.end();
   }
 
-  const target = req.query.url;
-  if (!target || (!target.startsWith("https://api.mail.tm") &&
-                  !target.startsWith("https://api.mail.gw"))) {
-    res.status(400).json({ error: "invalid target", got: target || null });
-    return;
+  const raw = req.query && req.query.url;
+  const target = Array.isArray(raw) ? raw[0] : raw;
+
+  const send = (code, obj) => {
+    res.statusCode = code;
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify(obj));
+  };
+
+  if (!target || !ALLOWED.some((a) => target.startsWith(a))) {
+    return send(400, { error: "invalid target", got: target || null });
   }
 
-  const headers = { "Content-Type": "application/json" };
-  if (req.headers.authorization) {
-    headers.Authorization = req.headers.authorization;
-  }
+  const headers = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (compatible; TempMail/1.0)",
+  };
+  if (req.headers.authorization) headers.Authorization = req.headers.authorization;
 
   const init = { method: req.method, headers };
-  if (req.method === "POST" && req.body) {
-    init.body = typeof req.body === "string"
-      ? req.body
-      : JSON.stringify(req.body);
+  if (!["GET", "HEAD", "DELETE"].includes(req.method) && req.body) {
+    init.body = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
   }
 
   try {
     const r = await fetch(target, init);
     const text = await r.text();
-    res.status(r.status);
+    res.statusCode = r.status;
     res.setHeader("Content-Type", "application/json");
-    res.send(text);
+    res.end(text || "");
   } catch (e) {
-    res.status(500).json({
-      error: String(e),
-      message: e.message,
-      target: target
-    });
+    send(502, { error: "upstream failed", message: String((e && e.message) || e) });
   }
 };
