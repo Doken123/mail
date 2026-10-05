@@ -107,6 +107,94 @@ function gapi(params) {
 }
 
 /* ===================
+   MIME PARSER
+   =================== */
+
+// decode quoted-printable
+function decodeQP(str) {
+  if (!str) return "";
+  return str
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9A-Fa-f]{2})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
+}
+
+// ambil body setelah header part (cari baris kosong pertama)
+function bodyOf(part) {
+  const sep1 = part.indexOf("\r\n\r\n");
+  const sep2 = part.indexOf("\n\n");
+  let start = -1;
+  if (sep1 !== -1 && (sep2 === -1 || sep1 < sep2)) start = sep1 + 4;
+  else if (sep2 !== -1) start = sep2 + 2;
+  if (start === -1) return "";
+  return part.slice(start);
+}
+
+// parse MIME lengkap
+function parseMime(raw) {
+  if (!raw) return { html: "", text: "" };
+
+  // buang header utama email
+  let body = raw;
+  const i1 = raw.indexOf("\r\n\r\n");
+  const i2 = raw.indexOf("\n\n");
+  let cut = -1;
+  if (i1 !== -1 && (i2 === -1 || i1 < i2)) cut = i1 + 4;
+  else if (i2 !== -1) cut = i2 + 2;
+  if (cut !== -1) body = raw.slice(cut);
+
+  // buang <pre> wrapper
+  body = body.replace(/<\/?pre[^>]*>/gi, "");
+
+  let htmlPart = "";
+  let textPart = "";
+
+  // cari boundary
+  const bm = raw.match(/boundary="?([^"\r\n;]+)"?/i);
+  if (bm) {
+    const boundary = bm[1];
+    const parts = body.split("--" + boundary);
+
+    parts.forEach(function (p) {
+      const isHtml = /Content-Type:\s*text\/html/i.test(p);
+      const isText = /Content-Type:\s*text\/plain/i.test(p);
+      if (!isHtml && !isText) return;
+
+      let c = bodyOf(p);
+      // buang sisa penanda boundary di akhir
+      c = c.replace(/--\s*$/g, "").trim();
+
+      // cek encoding
+      const enc = (p.match(/Content-Transfer-Encoding:\s*(\S+)/i) || [])[1] || "";
+      if (/quoted-printable/i.test(enc)) c = decodeQP(c);
+      else if (/base64/i.test(enc)) {
+        try { c = atob(c.replace(/\s/g, "")); } catch (e) {}
+      }
+
+      if (isHtml && !htmlPart) htmlPart = c;
+      if (isText && !textPart) textPart = c;
+    });
+  }
+
+  // kalau bukan multipart
+  if (!htmlPart && !textPart) {
+    if (/<html|<body|<div|<table|<a\s/i.test(body)) {
+      const m = body.match(/<html[\s\S]*<\/html>/i);
+      if (m) htmlPart = m[0];
+      else {
+        const b = body.match(/<body[\s\S]*<\/body>/i);
+        htmlPart = b ? b[0] : body;
+      }
+    } else {
+      textPart = decodeQP(body);
+    }
+  }
+
+  return { html: htmlPart, text: textPart };
+}
+
+/* ===================
    GUERRILLA API
    =================== */
 
@@ -143,46 +231,21 @@ function fetchMessage(id) {
   if (state.sid) params.sid_token = state.sid;
 
   return gapi(params).then(function (msg) {
-    let raw = msg.mail_body || "";
+    const raw = msg.mail_body || "";
+    const parsed = parseMime(raw);
 
-    // buang header: cari baris kosong pertama
-    let body = raw;
-    const i1 = raw.indexOf("\r\n\r\n");
-    const i2 = raw.indexOf("\n\n");
-    let cut = -1;
-    if (i1 !== -1 && (i2 === -1 || i1 < i2)) cut = i1 + 4;
-    else if (i2 !== -1) cut = i2 + 2;
-    if (cut !== -1) body = raw.slice(cut);
-
-    // kalau ternyata masih ada header, coba potong setelah baris "DKIM" / "MIME"
-    if (/^(delivered-to|received|arc-seal|dkim-signature|mime-version)/i.test(body.trim())) {
-      const lines = body.split(/\r?\n/);
-      let start = 0;
-      for (let i = 0; i < lines.length; i++) {
-        if (lines[i].trim() === "") { start = i + 1; break; }
-      }
-      body = lines.slice(start).join("\n");
-    }
-
-    // kalau body pakai HTML asli, biarkan; kalau plain text, escape
+    let text = "";
     let isHtml = false;
-    let text = body;
 
-    if (msg.mail_body && /<html|<body|<div|<table|<a\s/i.test(raw)) {
+    if (parsed.html && parsed.html.trim().length > 10) {
+      text = parsed.html;
       isHtml = true;
-      // ambil potongan HTML dari body setelah header
-      let htmlPart = body;
-      const m = raw.match(/<html[\s\S]*<\/html>/i);
-      if (m) htmlPart = m[0];
-      else {
-        const b = raw.match(/<body[\s\S]*<\/body>/i);
-        if (b) htmlPart = b[0];
-        else htmlPart = body;
-      }
-      text = htmlPart;
+    } else if (parsed.text && parsed.text.trim().length > 0) {
+      text = parsed.text;
+      isHtml = false;
     } else {
-      // plain text: kalau body ternyata punya banyak header, buang
-      text = body;
+      text = "(empty message)";
+      isHtml = false;
     }
 
     return {
@@ -307,21 +370,19 @@ function updateSaveButton() {
 }
 
 /* ===================
-   MODAL — tampilan seperti Gmail
+   MODAL
    =================== */
 
 function linkifyText(text) {
-  // escape dulu, lalu jadikan link bisa diklik
   return esc(text)
     .replace(
       /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" target="_blank" rel="noopener" style="color:#8ab4f8;text-decoration:underline">$1</a>'
+      '<a href="$1" target="_blank" rel="noopener">$1</a>'
     )
     .replace(/\n/g, "<br>");
 }
 
 function sanitizeHtml(html) {
-  // render HTML email, tapi buang script/iframe berbahaya
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
@@ -336,21 +397,14 @@ function openMessage(id) {
 
     let body;
     if (msg.isHtml) {
-      body =
-        '<div class="mail-html">' +
-        sanitizeHtml(msg.text) +
-        "</div>";
+      body = '<div class="mail-html">' + sanitizeHtml(msg.text) + "</div>";
     } else {
-      body =
-        '<div class="mail-plain">' +
-        linkifyText(msg.text) +
-        "</div>";
+      body = '<div class="mail-plain">' + linkifyText(msg.text) + "</div>";
     }
 
     modalContent.innerHTML = body;
     modal.classList.add("active");
 
-    // paksa link bisa diklik & tombol di dalam HTML email juga bisa diklik
     modalContent.querySelectorAll("a").forEach(function (a) {
       a.setAttribute("target", "_blank");
       a.setAttribute("rel", "noopener");
@@ -376,14 +430,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v5") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v6") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_v5", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v6", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
@@ -504,9 +558,7 @@ function createNewEmail() {
   mailCountEl.textContent = "0 messages";
 
   createInbox()
-    .then(function () {
-      return setName(randomName());
-    })
+    .then(function () { return setName(randomName()); })
     .then(function (address) {
       emailAddressEl.textContent = address;
       updateSaveButton();
