@@ -1,13 +1,12 @@
 /* ===================
-   TempMail — mail.gw
+   TempMail — Guerrilla Mail
    =================== */
 
-const API = "https://api.mail.gw";
+const GAPI = "https://api.guerrillamail.com/ajax.php";
 
 const state = {
-  token: null,
+  sid: null,
   address: null,
-  password: null,
   messages: [],
   saved: [],
   pollId: null,
@@ -60,13 +59,6 @@ function randomName() {
   return (f + l + n).toLowerCase();
 }
 
-function randomPass() {
-  let s = "";
-  const c = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (let i = 0; i < 16; i++) s += c[Math.floor(Math.random() * c.length)];
-  return s;
-}
-
 /* ===================
    HELPERS
    =================== */
@@ -96,112 +88,146 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
-function sleep(ms) {
-  return new Promise(function (r) { setTimeout(r, ms); });
+function qs(params) {
+  const parts = [];
+  for (const k in params) {
+    parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(params[k]));
+  }
+  return parts.join("&");
 }
 
-function api(path, method, body, needToken) {
-  const headers = { "Content-Type": "application/json" };
-  if (needToken !== false && state.token) {
-    headers.Authorization = "Bearer " + state.token;
-  }
-  const opts = {
-    method: method || "GET",
-    headers: headers,
-    cache: "no-store",
-  };
-  if (body) opts.body = JSON.stringify(body);
-
-  return fetch(API + path, opts).then(function (res) {
-    if (res.status === 204) return null;
-    return res.text().then(function (txt) {
-      let data = null;
-      try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = txt; }
-      if (!res.ok) {
-        const msg = (data && (data.message || data["hydra:description"])) ||
-          ("HTTP " + res.status);
-        throw new Error(msg);
-      }
+function gapi(params) {
+  const url = GAPI + "?" + qs(params);
+  return fetch(url, { cache: "no-store" }).then(function (r) {
+    return r.json().then(function (data) {
+      if (!r.ok) throw new Error((data && data.error) || ("HTTP " + r.status));
       return data;
     });
   });
 }
 
-/* ===================
-   MAIL.GW API
-   =================== */
-
-function getDomain() {
-  return api("/domains?page=1", "GET", null, false).then(function (d) {
-    const list = d["hydra:member"] || d;
-    if (!list || !list.length) throw new Error("no domain");
-    const active = list.filter(function (x) { return x.isActive !== false; });
-    const pick = active.length
-      ? active[Math.floor(Math.random() * active.length)]
-      : list[0];
-    return pick.domain;
-  });
+function decodeQP(str) {
+  if (!str) return "";
+  return str
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9A-Fa-f]{2})/g, function (_, h) {
+      return String.fromCharCode(parseInt(h, 16));
+    });
 }
 
-function createAccount(retries) {
-  retries = retries == null ? 3 : retries;
-  let addr, pass;
+/* ===================
+   GUERRILLA API
+   =================== */
 
-  return getDomain().then(function (domain) {
-    addr = randomName() + "@" + domain;
-    pass = randomPass();
-    return api("/accounts", "POST", { address: addr, password: pass }, false);
-  }).then(function () {
-    return api("/token", "POST", { address: addr, password: pass }, false);
-  }).then(function (login) {
-    state.token = login.token;
-    state.address = addr;
-    state.password = pass;
-    return addr;
-  }).catch(function (err) {
-    if (retries > 0) {
-      return sleep(800).then(function () { return createAccount(retries - 1); });
-    }
-    throw err;
+function createInbox() {
+  return gapi({ f: "get_email_address", lang: "en" }).then(function (d) {
+    if (!d || !d.email_addr) throw new Error("no address");
+    state.sid = d.sid_token || null;
+    state.address = d.email_addr;
+    return d.email_addr;
   });
 }
 
 function fetchMessages() {
-  if (!state.token) return Promise.resolve([]);
-  return api("/messages?page=1").then(function (d) {
-    const list = d["hydra:member"] || d || [];
+  const params = { f: "get_email_list", offset: 0 };
+  if (state.sid) params.sid_token = state.sid;
+
+  return gapi(params).then(function (d) {
+    const list = (d && d.list) || [];
     return list.map(function (m) {
       return {
-        id: m.id,
-        from: (m.from && m.from.address) || "unknown",
-        subject: m.subject || "(no subject)",
-        date: m.createdAt,
+        id: m.mail_id,
+        from: m.mail_from || "unknown",
+        subject: m.mail_subject || "(no subject)",
+        date: m.mail_timestamp
+          ? new Date(m.mail_timestamp * 1000).toISOString()
+          : new Date().toISOString(),
       };
     });
   });
 }
 
+// fetch email — dipanggil 2x untuk trigger Guerrilla "baca" MIME-nya
 function fetchMessage(id) {
-  return api("/messages/" + id).then(function (msg) {
-    let text = "";
-    let isHtml = false;
+  const params = { f: "fetch_email", email_id: id };
+  if (state.sid) params.sid_token = state.sid;
 
-    if (msg.html && (Array.isArray(msg.html) ? msg.html.length : msg.html)) {
-      text = Array.isArray(msg.html) ? msg.html.join("") : msg.html;
-      isHtml = true;
-    } else if (msg.text) {
-      text = msg.text;
-      isHtml = false;
-    } else {
-      text = "(empty message)";
+  return gapi(params)
+    .then(function () { return gapi(params); })
+    .then(function (msg) {
+      let raw = msg.mail_body || "";
+      raw = raw.replace(/<\/?pre[^>]*>/gi, "");
+
+      // cari HTML bersih
+      let html = "";
+      const htmlMatch = raw.match(/<html[\s\S]*<\/html>/i);
+      if (htmlMatch) html = htmlMatch[0];
+      else {
+        const bodyMatch = raw.match(/<body[\s\S]*<\/body>/i);
+        if (bodyMatch) html = bodyMatch[0];
+        else if (
+          /<(div|p|a|table|br|span)[\s>]/i.test(raw) &&
+          !/Content-Type:\s*text\/(plain|html)/i.test(raw)
+        ) {
+          html = raw;
+        }
+      }
+
+      if (html && !/Content-Type:/i.test(html)) {
+        return {
+          subject: msg.mail_subject || "(no subject)",
+          from: msg.mail_from || "unknown",
+          text: html,
+          isHtml: true,
+        };
+      }
+
+      // kalau tidak ada HTML, ambil plain text dari MIME
+      let plain = "";
+      const plainMatch = raw.match(
+        /Content-Type:\s*text\/plain[^\r\n]*\r?\n(?:[^\r\n]*\r?\n)*\r?\n([\s\S]*?)(?:\r?\n--|$)/i
+      );
+      if (plainMatch) plain = plainMatch[1].trim();
+      if (plain && /=[0-9A-Fa-f]{2}/.test(plain)) plain = decodeQP(plain);
+
+      if (plain) {
+        return {
+          subject: msg.mail_subject || "(no subject)",
+          from: msg.mail_from || "unknown",
+          text: plain,
+          isHtml: false,
+        };
+      }
+
+      // terakhir: HTML tag apa saja yang ada, atau raw
+      if (/<(div|p|a|table|br|span|body|html)[\s>]/i.test(raw)) {
+        return {
+          subject: msg.mail_subject || "(no subject)",
+          from: msg.mail_from || "unknown",
+          text: raw,
+          isHtml: true,
+        };
+      }
+
+      return {
+        subject: msg.mail_subject || "(no subject)",
+        from: msg.mail_from || "unknown",
+        text: raw || "(empty message)",
+        isHtml: false,
+      };
+    });
+}
+
+function setName(name) {
+  const params = { f: "set_email_user", email_user: name, lang: "en" };
+  if (state.sid) params.sid_token = state.sid;
+
+  return gapi(params).then(function (d) {
+    if (d && d.email_addr) {
+      state.address = d.email_addr;
+      return d.email_addr;
     }
-
-    return {
-      subject: msg.subject || "(no subject)",
-      from: (msg.from && msg.from.address) || "unknown",
-      text: text,
-      isHtml: isHtml,
-    };
+    return state.address;
   });
 }
 
@@ -365,14 +391,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_gw") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_gm") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_gw", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_gm", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
@@ -389,7 +415,7 @@ function toggleSave() {
   } else {
     state.saved.unshift({
       email: state.address,
-      password: state.password,
+      sid: state.sid,
       savedAt: new Date().toISOString(),
     });
     showToast("email disimpan");
@@ -412,35 +438,29 @@ function useSavedEmail(email) {
   for (let i = 0; i < state.saved.length; i++) {
     if (state.saved[i].email === email) { found = state.saved[i]; break; }
   }
-  if (!found || !found.password) {
-    showToast("password tidak tersimpan");
+  if (!found || !found.sid) {
+    showToast("tidak bisa dipakai ulang");
     return;
   }
 
   clearInterval(state.pollId);
+  state.sid = found.sid;
+  state.address = found.email;
+  state.messages = [];
 
-  api("/token", "POST", { address: found.email, password: found.password }, false)
-    .then(function (login) {
-      state.token = login.token;
-      state.address = found.email;
-      state.password = found.password;
-      state.messages = [];
+  try {
+    localStorage.setItem("tempmail_current_gm", JSON.stringify({
+      email: found.email,
+      sid: found.sid,
+    }));
+  } catch (e) {}
 
-      try {
-        localStorage.setItem("tempmail_current_gw", JSON.stringify({
-          email: found.email,
-          password: found.password,
-        }));
-      } catch (e) {}
-
-      emailAddressEl.textContent = found.email;
-      updateSaveButton();
-      renderMessages();
-      startPolling();
-      return refreshMessages(true);
-    })
-    .then(function () { showToast("email dipakai"); })
-    .catch(function () { showToast("gagal pakai email"); });
+  emailAddressEl.textContent = found.email;
+  updateSaveButton();
+  renderMessages();
+  startPolling();
+  refreshMessages(true);
+  showToast("email dipakai");
 }
 
 /* ===================
@@ -473,7 +493,7 @@ function fallbackCopy(text) {
    =================== */
 
 function refreshMessages(silent) {
-  if (!state.token) return Promise.resolve();
+  if (!state.address) return Promise.resolve();
   return fetchMessages().then(function (list) {
     const changed = list.length !== state.messages.length;
     state.messages = list;
@@ -496,9 +516,6 @@ function startPolling() {
 
 function createNewEmail() {
   clearInterval(state.pollId);
-  state.token = null;
-  state.address = null;
-  state.password = null;
   state.messages = [];
 
   emailAddressEl.textContent = "loading...";
@@ -506,14 +523,15 @@ function createNewEmail() {
   messageNumberEl.textContent = "0";
   mailCountEl.textContent = "0 messages";
 
-  createAccount(3)
+  createInbox()
+    .then(function () { return setName(randomName()); })
     .then(function (address) {
       emailAddressEl.textContent = address;
 
       try {
-        localStorage.setItem("tempmail_current_gw", JSON.stringify({
+        localStorage.setItem("tempmail_current_gm", JSON.stringify({
           email: address,
-          password: state.password,
+          sid: state.sid,
         }));
       } catch (e) {}
 
@@ -541,7 +559,7 @@ function init() {
   saveBtn.addEventListener("click", toggleSave);
 
   newEmailBtn.addEventListener("click", function () {
-    try { localStorage.removeItem("tempmail_current_gw"); } catch (e) {}
+    try { localStorage.removeItem("tempmail_current_gm"); } catch (e) {}
     createNewEmail();
   });
 
@@ -550,23 +568,16 @@ function init() {
   // pakai email tersimpan
   let saved = null;
   try {
-    saved = JSON.parse(localStorage.getItem("tempmail_current_gw") || "null");
+    saved = JSON.parse(localStorage.getItem("tempmail_current_gm") || "null");
   } catch (e) {}
 
-  if (saved && saved.email && saved.password) {
-    api("/token", "POST", { address: saved.email, password: saved.password }, false)
-      .then(function (login) {
-        state.token = login.token;
-        state.address = saved.email;
-        state.password = saved.password;
-        emailAddressEl.textContent = saved.email;
-        updateSaveButton();
-        startPolling();
-        return refreshMessages(true);
-      })
-      .catch(function () {
-        createNewEmail();
-      });
+  if (saved && saved.email && saved.sid) {
+    state.sid = saved.sid;
+    state.address = saved.email;
+    emailAddressEl.textContent = saved.email;
+    updateSaveButton();
+    startPolling();
+    refreshMessages(true);
   } else {
     createNewEmail();
   }
