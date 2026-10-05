@@ -1,14 +1,13 @@
 /* ===================
-   TempMail — script
+   TempMail — mail.tm
    =================== */
 
-const API = "https://www.1secmail.com/api/v1/";
-const DOMAINS = ["1secmail.com", "1secmail.org", "1secmail.net"];
+const API = "https://api.mail.tm";
 
 const state = {
-  login: null,
-  domain: null,
-  email: null,
+  token: null,
+  address: null,
+  password: null,
   messages: [],
   saved: [],
   pollId: null,
@@ -65,6 +64,13 @@ function randomName() {
   return (f + l + n).toLowerCase();
 }
 
+function randomPass() {
+  let s = "";
+  const c = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  for (let i = 0; i < 16; i++) s += c[Math.floor(Math.random() * c.length)];
+  return s;
+}
+
 /* ===================
    HELPERS
    =================== */
@@ -73,7 +79,9 @@ function showToast(t) {
   toast.textContent = t;
   toast.classList.add("show");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
+  showToast._t = setTimeout(function () {
+    toast.classList.remove("show");
+  }, 1800);
 }
 
 function timeAgo(d) {
@@ -92,37 +100,76 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
+function sleep(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
 /* ===================
    API
    =================== */
 
-async function apiGet(url) {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error("HTTP " + res.status);
-  return res.json();
+function api(path, method, body, needToken) {
+  const headers = { "Content-Type": "application/json" };
+  if (needToken !== false && state.token) {
+    headers.Authorization = "Bearer " + state.token;
+  }
+  const opts = { method: method || "GET", headers: headers };
+  if (body) opts.body = JSON.stringify(body);
+
+  return fetch(API + path, opts).then(function (res) {
+    if (res.status === 204) return null;
+    return res.json().then(function (data) {
+      if (!res.ok) {
+        throw new Error((data && data.message) || ("HTTP " + res.status));
+      }
+      return data;
+    });
+  });
+}
+
+function getDomain() {
+  return api("/domains?page=1", "GET", null, false).then(function (d) {
+    const list = d["hydra:member"] || d;
+    if (!list || !list.length) throw new Error("no domain");
+    return list[0].domain;
+  });
+}
+
+function createAccount(retries) {
+  retries = retries == null ? 3 : retries;
+  return getDomain().then(function (domain) {
+    const address = randomName() + "@" + domain;
+    const password = randomPass();
+
+    return api("/accounts", "POST", { address: address, password: password }, false)
+      .then(function () {
+        return api("/token", "POST", { address: address, password: password }, false);
+      })
+      .then(function (login) {
+        state.token = login.token;
+        state.address = address;
+        state.password = password;
+        return address;
+      });
+  }).catch(function (err) {
+    if (retries > 0) {
+      return sleep(800).then(function () {
+        return createAccount(retries - 1);
+      });
+    }
+    throw err;
+  });
 }
 
 function fetchMessages() {
-  if (!state.login) return Promise.resolve([]);
-  const url =
-    API +
-    "?action=getMessages&login=" +
-    encodeURIComponent(state.login) +
-    "&domain=" +
-    encodeURIComponent(state.domain);
-  return apiGet(url).then((d) => (Array.isArray(d) ? d : []));
+  if (!state.token) return Promise.resolve([]);
+  return api("/messages?page=1").then(function (d) {
+    return d["hydra:member"] || d || [];
+  });
 }
 
 function fetchMessage(id) {
-  const url =
-    API +
-    "?action=readMessage&login=" +
-    encodeURIComponent(state.login) +
-    "&domain=" +
-    encodeURIComponent(state.domain) +
-    "&id=" +
-    id;
-  return apiGet(url);
+  return api("/messages/" + id);
 }
 
 /* ===================
@@ -132,8 +179,7 @@ function fetchMessage(id) {
 function renderMessages() {
   const count = state.messages.length;
   messageNumberEl.textContent = count;
-  mailCountEl.textContent =
-    count + " message" + (count !== 1 ? "s" : "");
+  mailCountEl.textContent = count + " message" + (count !== 1 ? "s" : "");
 
   if (!count) {
     mailListEl.innerHTML =
@@ -152,14 +198,15 @@ function renderMessages() {
 
   let html = "";
   state.messages.forEach(function (m) {
+    const from = (m.from && m.from.address) || "unknown";
     html +=
       '<div class="mail" data-id="' + m.id + '">' +
       '<div class="mail-icon">✉</div>' +
       '<div class="mail-info">' +
-      "<strong>" + esc(m.from) + "</strong>" +
+      "<strong>" + esc(from) + "</strong>" +
       "<span>" + esc(m.subject || "(no subject)") + "</span>" +
       "</div>" +
-      '<div class="mail-time">' + timeAgo(m.date) + "</div>" +
+      '<div class="mail-time">' + timeAgo(m.createdAt) + "</div>" +
       "</div>";
   });
   mailListEl.innerHTML = html;
@@ -194,7 +241,7 @@ function renderSaved() {
 
   let html = "";
   state.saved.forEach(function (s) {
-    const active = s.email === state.email;
+    const active = s.email === state.address;
     html +=
       '<div class="saved-item ' + (active ? "active" : "") +
       '" data-email="' + esc(s.email) + '">' +
@@ -215,11 +262,10 @@ function renderSaved() {
     const email = el.dataset.email;
     el.querySelector(".saved-main").addEventListener("click", function () {
       copyToClipboard(email);
-      showToast("email disalin");
     });
     el.querySelector(".use").addEventListener("click", function (e) {
       e.stopPropagation();
-      useSavedEmail(email);
+      loginSaved(email);
     });
     el.querySelector(".delete").addEventListener("click", function (e) {
       e.stopPropagation();
@@ -231,10 +277,7 @@ function renderSaved() {
 function updateSaveButton() {
   let isSaved = false;
   for (let i = 0; i < state.saved.length; i++) {
-    if (state.saved[i].email === state.email) {
-      isSaved = true;
-      break;
-    }
+    if (state.saved[i].email === state.address) { isSaved = true; break; }
   }
   saveBtn.classList.toggle("saved", isSaved);
   saveText.textContent = isSaved ? "Saved" : "Save";
@@ -248,26 +291,23 @@ function openMessage(id) {
   fetchMessage(id)
     .then(function (msg) {
       modalSubject.textContent = msg.subject || "(no subject)";
-      modalFrom.textContent = msg.from || "unknown";
+      modalFrom.textContent = (msg.from && msg.from.address) || "unknown";
+
       let body = "";
-      if (msg.textBody) {
-        body = esc(msg.textBody).replace(/\n/g, "<br>");
-      } else if (msg.htmlBody) {
-        body = msg.htmlBody;
+      if (msg.text) {
+        body = esc(msg.text).replace(/\n/g, "<br>");
+      } else if (msg.html && msg.html.length) {
+        body = Array.isArray(msg.html) ? msg.html.join("") : msg.html;
       } else {
         body = "(empty message)";
       }
       modalContent.innerHTML = body;
       modal.classList.add("active");
     })
-    .catch(function () {
-      showToast("gagal buka pesan");
-    });
+    .catch(function () { showToast("gagal buka pesan"); });
 }
 
-function closeModalFn() {
-  modal.classList.remove("active");
-}
+function closeModalFn() { modal.classList.remove("active"); }
 
 closeModal.addEventListener("click", closeModalFn);
 modal.addEventListener("click", function (e) {
@@ -283,35 +323,31 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved") || "[]");
-  } catch (e) {
-    state.saved = [];
-  }
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v2") || "[]");
+  } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v2", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
 
 function toggleSave() {
-  if (!state.email) return;
+  if (!state.address) return;
   let idx = -1;
   for (let i = 0; i < state.saved.length; i++) {
-    if (state.saved[i].email === state.email) {
-      idx = i;
-      break;
-    }
+    if (state.saved[i].email === state.address) { idx = i; break; }
   }
   if (idx >= 0) {
     state.saved.splice(idx, 1);
     showToast("dihapus dari saved");
   } else {
     state.saved.unshift({
-      email: state.email,
+      email: state.address,
+      password: state.password,
       savedAt: new Date().toISOString(),
     });
     showToast("email disimpan");
@@ -320,46 +356,43 @@ function toggleSave() {
 }
 
 function removeSaved(email) {
-  state.saved = state.saved.filter(function (s) {
-    return s.email !== email;
-  });
+  state.saved = state.saved.filter(function (s) { return s.email !== email; });
   persistSaved();
   showToast("dihapus");
 }
 
-/* ===================
-   USE SAVED EMAIL
-   =================== */
-
-function useSavedEmail(email) {
-  if (email === state.email) {
+function loginSaved(email) {
+  if (email === state.address) {
     showToast("email ini sedang dipakai");
     return;
   }
-  const parts = email.split("@");
-  const login = parts[0];
-  const domain = parts[1];
-  if (!login || !domain) {
-    showToast("email tidak valid");
+  let found = null;
+  for (let i = 0; i < state.saved.length; i++) {
+    if (state.saved[i].email === email) { found = state.saved[i]; break; }
+  }
+  if (!found || !found.password) {
+    showToast("password tidak tersimpan");
     return;
   }
 
   clearInterval(state.pollId);
 
-  state.login = login;
-  state.domain = domain;
-  state.email = email;
-  state.messages = [];
+  api("/token", "POST", { address: found.email, password: found.password }, false)
+    .then(function (login) {
+      state.token = login.token;
+      state.address = found.email;
+      state.password = found.password;
+      state.messages = [];
 
-  emailAddressEl.textContent = email;
-  updateSaveButton();
-  renderMessages();
+      emailAddressEl.textContent = found.email;
+      updateSaveButton();
+      renderMessages();
 
-  startPolling();
-
-  refreshMessages(true).then(function () {
-    showToast("email dipakai");
-  });
+      startPolling();
+      return refreshMessages(true);
+    })
+    .then(function () { showToast("email dipakai"); })
+    .catch(function () { showToast("gagal pakai email"); });
 }
 
 /* ===================
@@ -369,12 +402,8 @@ function useSavedEmail(email) {
 function copyToClipboard(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(
-      function () {
-        showToast("copied");
-      },
-      function () {
-        fallbackCopy(text);
-      }
+      function () { showToast("copied"); },
+      function () { fallbackCopy(text); }
     );
   } else {
     fallbackCopy(text);
@@ -386,12 +415,8 @@ function fallbackCopy(text) {
   ta.value = text;
   document.body.appendChild(ta);
   ta.select();
-  try {
-    document.execCommand("copy");
-    showToast("copied");
-  } catch (e) {
-    showToast("gagal copy");
-  }
+  try { document.execCommand("copy"); showToast("copied"); }
+  catch (e) { showToast("gagal copy"); }
   document.body.removeChild(ta);
 }
 
@@ -400,7 +425,7 @@ function fallbackCopy(text) {
    =================== */
 
 function refreshMessages(silent) {
-  if (!state.login) return Promise.resolve();
+  if (!state.token) return Promise.resolve();
   return fetchMessages()
     .then(function (list) {
       const changed = list.length !== state.messages.length;
@@ -416,7 +441,7 @@ function startPolling() {
   clearInterval(state.pollId);
   state.pollId = setInterval(function () {
     refreshMessages(true);
-  }, 8000);
+  }, 6000);
 }
 
 /* ===================
@@ -425,6 +450,9 @@ function startPolling() {
 
 function createNewEmail() {
   clearInterval(state.pollId);
+  state.token = null;
+  state.address = null;
+  state.password = null;
   state.messages = [];
 
   emailAddressEl.textContent = "loading...";
@@ -432,21 +460,18 @@ function createNewEmail() {
   messageNumberEl.textContent = "0";
   mailCountEl.textContent = "0 messages";
 
-  const login = randomName();
-  const domain = DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
-  const email = login + "@" + domain;
-
-  state.login = login;
-  state.domain = domain;
-  state.email = email;
-
-  // LANGSUNG tampilkan emailnya — tanpa nunggu API
-  emailAddressEl.textContent = email;
-  updateSaveButton();
-  renderMessages();
-
-  startPolling();
-  refreshMessages(true);
+  createAccount(3)
+    .then(function (address) {
+      emailAddressEl.textContent = address;
+      updateSaveButton();
+      startPolling();
+      return refreshMessages(true);
+    })
+    .catch(function (err) {
+      console.error(err);
+      emailAddressEl.textContent = "gagal, coba New";
+      showToast("gagal buat email, tekan New");
+    });
 }
 
 /* ===================
@@ -457,7 +482,7 @@ function init() {
   loadSaved();
 
   copyBtn.addEventListener("click", function () {
-    if (state.email) copyToClipboard(state.email);
+    if (state.address) copyToClipboard(state.address);
   });
   saveBtn.addEventListener("click", toggleSave);
   newEmailBtn.addEventListener("click", createNewEmail);
