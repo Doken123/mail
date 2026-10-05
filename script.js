@@ -5,7 +5,7 @@
 const GAPI = "https://api.guerrillamail.com/ajax.php";
 
 const state = {
-  sid: null,       // session id Guerrilla
+  sid: null,
   address: null,
   messages: [],
   saved: [],
@@ -35,7 +35,7 @@ const modalContent = $("modalContent");
 const toast = $("toast");
 
 /* ===================
-   NAMA RANDOM (untuk tampilan saja)
+   NAMA RANDOM
    =================== */
 
 const FIRST = ["budi","andi","rizky","dimas","fajar","gilang","hafiz","ivan","joko",
@@ -96,7 +96,7 @@ function qs(params) {
   return parts.join("&");
 }
 
-function gapi(params, extra) {
+function gapi(params) {
   const url = GAPI + "?" + qs(params);
   return fetch(url, { cache: "no-store" }).then(function (r) {
     return r.json().then(function (data) {
@@ -110,18 +110,15 @@ function gapi(params, extra) {
    GUERRILLA API
    =================== */
 
-// Buat inbox baru
 function createInbox() {
-  return gapi({ f: "get_email_address", lang: "en" })
-    .then(function (d) {
-      if (!d || !d.email_addr) throw new Error("no address");
-      state.sid = d.sid_token || null;
-      state.address = d.email_addr;
-      return d.email_addr;
-    });
+  return gapi({ f: "get_email_address", lang: "en" }).then(function (d) {
+    if (!d || !d.email_addr) throw new Error("no address");
+    state.sid = d.sid_token || null;
+    state.address = d.email_addr;
+    return d.email_addr;
+  });
 }
 
-// Ambil daftar pesan
 function fetchMessages() {
   const params = { f: "get_email_list", offset: 0 };
   if (state.sid) params.sid_token = state.sid;
@@ -141,21 +138,62 @@ function fetchMessages() {
   });
 }
 
-// Ambil isi pesan
 function fetchMessage(id) {
   const params = { f: "fetch_email", email_id: id };
   if (state.sid) params.sid_token = state.sid;
 
   return gapi(params).then(function (msg) {
+    let raw = msg.mail_body || "";
+
+    // buang header: cari baris kosong pertama
+    let body = raw;
+    const i1 = raw.indexOf("\r\n\r\n");
+    const i2 = raw.indexOf("\n\n");
+    let cut = -1;
+    if (i1 !== -1 && (i2 === -1 || i1 < i2)) cut = i1 + 4;
+    else if (i2 !== -1) cut = i2 + 2;
+    if (cut !== -1) body = raw.slice(cut);
+
+    // kalau ternyata masih ada header, coba potong setelah baris "DKIM" / "MIME"
+    if (/^(delivered-to|received|arc-seal|dkim-signature|mime-version)/i.test(body.trim())) {
+      const lines = body.split(/\r?\n/);
+      let start = 0;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim() === "") { start = i + 1; break; }
+      }
+      body = lines.slice(start).join("\n");
+    }
+
+    // kalau body pakai HTML asli, biarkan; kalau plain text, escape
+    let isHtml = false;
+    let text = body;
+
+    if (msg.mail_body && /<html|<body|<div|<table|<a\s/i.test(raw)) {
+      isHtml = true;
+      // ambil potongan HTML dari body setelah header
+      let htmlPart = body;
+      const m = raw.match(/<html[\s\S]*<\/html>/i);
+      if (m) htmlPart = m[0];
+      else {
+        const b = raw.match(/<body[\s\S]*<\/body>/i);
+        if (b) htmlPart = b[0];
+        else htmlPart = body;
+      }
+      text = htmlPart;
+    } else {
+      // plain text: kalau body ternyata punya banyak header, buang
+      text = body;
+    }
+
     return {
       subject: msg.mail_subject || "(no subject)",
       from: msg.mail_from || "unknown",
-      text: msg.mail_body || "",
+      text: text,
+      isHtml: isHtml,
     };
   });
 }
 
-// Set nama random biar alamatnya pakai nama orang
 function setName(name) {
   const params = { f: "set_email_user", email_user: name, lang: "en" };
   if (state.sid) params.sid_token = state.sid;
@@ -269,18 +307,54 @@ function updateSaveButton() {
 }
 
 /* ===================
-   MODAL
+   MODAL — tampilan seperti Gmail
    =================== */
+
+function linkifyText(text) {
+  // escape dulu, lalu jadikan link bisa diklik
+  return esc(text)
+    .replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener" style="color:#8ab4f8;text-decoration:underline">$1</a>'
+    )
+    .replace(/\n/g, "<br>");
+}
+
+function sanitizeHtml(html) {
+  // render HTML email, tapi buang script/iframe berbahaya
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, "");
+}
 
 function openMessage(id) {
   fetchMessage(id).then(function (msg) {
     modalSubject.textContent = msg.subject || "(no subject)";
     modalFrom.textContent = msg.from || "unknown";
-    let body = "";
-    if (msg.text) body = esc(msg.text).replace(/\n/g, "<br>");
-    else body = "(empty message)";
+
+    let body;
+    if (msg.isHtml) {
+      body =
+        '<div class="mail-html">' +
+        sanitizeHtml(msg.text) +
+        "</div>";
+    } else {
+      body =
+        '<div class="mail-plain">' +
+        linkifyText(msg.text) +
+        "</div>";
+    }
+
     modalContent.innerHTML = body;
     modal.classList.add("active");
+
+    // paksa link bisa diklik & tombol di dalam HTML email juga bisa diklik
+    modalContent.querySelectorAll("a").forEach(function (a) {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener");
+    });
   }).catch(function () {
     showToast("gagal buka pesan");
   });
@@ -302,14 +376,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v4") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v5") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_v4", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v5", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
@@ -431,7 +505,6 @@ function createNewEmail() {
 
   createInbox()
     .then(function () {
-      // set nama random biar alamatnya lebih manusiawi
       return setName(randomName());
     })
     .then(function (address) {
