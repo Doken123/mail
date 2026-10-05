@@ -12,14 +12,10 @@ const state = {
   saved: [],
   timerInterval: null,
   pollInterval: null,
-  expiresIn: 10 * 60, // detik
+  expiresIn: 10 * 60,
 };
 
 const $ = (id) => document.getElementById(id);
-
-/* =========================
-   DOM
-   ========================= */
 
 const emailAddressEl = $("emailAddress");
 const copyBtn = $("copyBtn");
@@ -50,9 +46,7 @@ function showToast(text) {
   toast.textContent = text;
   toast.classList.add("show");
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => {
-    toast.classList.remove("show");
-  }, 1800);
+  showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
 function randomString(len = 10) {
@@ -78,19 +72,36 @@ function timeAgo(dateStr) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
 /* =========================
-   API
+   API (dengan retry + fallback domain)
    ========================= */
+
+const FALLBACK_DOMAINS = [
+  "mail.tm",
+  "punkproof.com",
+  "indigobook.com",
+  "dollicons.com",
+  "teleg.eu",
+];
 
 async function api(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...(options.headers || {}),
   };
-
-  if (state.token) {
-    headers.Authorization = `Bearer ${state.token}`;
-  }
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
 
   const res = await fetch(API + path, { ...options, headers });
   if (!res.ok) {
@@ -101,34 +112,54 @@ async function api(path, options = {}) {
 }
 
 async function getDomains() {
-  const data = await api("/domains?page=1");
-  const list = data["hydra:member"] || data;
-  if (!list.length) throw new Error("No domain available");
-  return list[0].domain;
+  // coba ambil domain aktif dari API
+  try {
+    const data = await api("/domains?page=1");
+    const list = data["hydra:member"] || data;
+    const active = list.filter((d) => d.isActive !== false);
+    if (active.length) {
+      // acak supaya tidak selalu kena rate limit di 1 domain
+      const pick = active[Math.floor(Math.random() * active.length)];
+      return pick.domain;
+    }
+  } catch (_) {}
+
+  // fallback
+  return FALLBACK_DOMAINS[Math.floor(Math.random() * FALLBACK_DOMAINS.length)];
 }
 
-async function createAccount() {
-  const domain = await getDomains();
-  const address = `${randomString(10)}@${domain}`;
-  const password = randomString(16);
+async function createAccount(retries = 4) {
+  let lastErr;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const domain = await getDomains();
+      const address = `${randomString(12)}@${domain}`;
+      const password = randomString(16);
 
-  await api("/accounts", {
-    method: "POST",
-    body: JSON.stringify({ address, password }),
-  });
+      await api("/accounts", {
+        method: "POST",
+        body: JSON.stringify({ address, password }),
+      });
 
-  const login = await api("/token", {
-    method: "POST",
-    body: JSON.stringify({ address, password }),
-  });
+      const login = await api("/token", {
+        method: "POST",
+        body: JSON.stringify({ address, password }),
+      });
 
-  state.token = login.token;
-  state.email = address;
+      state.token = login.token;
+      state.email = address;
 
-  const me = await api("/me");
-  state.accountId = me.id;
+      const me = await api("/me");
+      state.accountId = me.id;
 
-  return address;
+      return address;
+    } catch (err) {
+      lastErr = err;
+      // tunggu sebentar sebelum retry (rate limit)
+      await sleep(800 + i * 700);
+    }
+  }
+  throw lastErr || new Error("gagal buat akun");
 }
 
 async function fetchMessages() {
@@ -138,10 +169,6 @@ async function fetchMessages() {
 
 async function fetchMessage(id) {
   return api(`/messages/${id}`);
-}
-
-async function deleteMessage(id) {
-  return api(`/messages/${id}`, { method: "DELETE" });
 }
 
 /* =========================
@@ -221,21 +248,14 @@ function renderSaved() {
   savedListEl.querySelectorAll(".saved-item").forEach((el) => {
     const email = el.dataset.email;
     el.querySelector(".saved-main").addEventListener("click", () => {
-      switchToSaved(email);
+      copyToClipboard(email);
+      showToast("email disalin");
     });
     el.querySelector(".delete").addEventListener("click", (e) => {
       e.stopPropagation();
       removeSaved(email);
     });
   });
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function updateSaveButton() {
@@ -309,7 +329,10 @@ function toggleSave() {
     state.saved.splice(idx, 1);
     showToast("dihapus dari saved");
   } else {
-    state.saved.unshift({ email: state.email, savedAt: new Date().toISOString() });
+    state.saved.unshift({
+      email: state.email,
+      savedAt: new Date().toISOString(),
+    });
     showToast("email disimpan");
   }
   persistSaved();
@@ -321,14 +344,8 @@ function removeSaved(email) {
   showToast("dihapus");
 }
 
-async function switchToSaved(email) {
-  // Karena mail.tm butuh password, kita hanya bisa mengingatkan
-  showToast("gunakan email ini di sesi baru");
-  copyToClipboard(email);
-}
-
 /* =========================
-   TIMER
+   TIMER (selalu jalan)
    ========================= */
 
 function startTimer() {
@@ -341,6 +358,7 @@ function startTimer() {
     if (state.expiresIn <= 0) {
       clearInterval(state.timerInterval);
       timerEl.textContent = "00:00";
+      showToast("email expired, membuat baru...");
       createNewEmail();
       return;
     }
@@ -377,9 +395,6 @@ async function refreshMessages(silent = false) {
     const list = await fetchMessages();
     state.messages = list;
     renderMessages();
-    if (!silent && list.length === 0) {
-      // tetap diam
-    }
   } catch (err) {
     if (!silent) showToast("gagal refresh");
   }
@@ -397,21 +412,33 @@ function startPolling() {
    ========================= */
 
 async function createNewEmail() {
-  emailAddressEl.textContent = "loading...";
-  mailListEl.innerHTML = "";
+  // reset state
+  clearInterval(state.timerInterval);
+  clearInterval(state.pollInterval);
+  state.token = null;
+  state.accountId = null;
+  state.email = null;
   state.messages = [];
+
+  emailAddressEl.textContent = "loading...";
+  timerEl.textContent = "10:00";
+  messageNumberEl.textContent = "0";
+  mailCountEl.textContent = "0 messages";
+  renderMessages();
+
+  // timer tetap jalan walau API gagal
+  startTimer();
 
   try {
     const address = await createAccount();
     emailAddressEl.textContent = address;
     updateSaveButton();
-    startTimer();
     startPolling();
     await refreshMessages(true);
   } catch (err) {
-    emailAddressEl.textContent = "error";
-    showToast("gagal buat email");
     console.error(err);
+    emailAddressEl.textContent = "gagal, coba New lagi";
+    showToast("gagal buat email, tekan New");
   }
 }
 
@@ -423,9 +450,7 @@ function init() {
   });
 
   saveBtn.addEventListener("click", toggleSave);
-
   newEmailBtn.addEventListener("click", createNewEmail);
-
   refreshBtn.addEventListener("click", () => refreshMessages(false));
 
   createNewEmail();
