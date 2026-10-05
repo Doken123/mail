@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>TempMail</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <div class="bg">
+    <div class="orb orb1"></div>
+    <div class="orb orb2"></div>
+    <div class="grid"></div>
+  </div>
+
+  <div class="app">
+
+    <!-- NAVBAR -->
+    <nav class="navbar">
+
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 5h16v14H4z"/>
+            <path d="m4 7 8 6 8-6"/>
+          </svg>
+        </div>
+
+        <div>
+          <h1>TempMail</h1>
+          <span>temporary inbox</span>
+        </div>
+      </div>
+
+      <div class="online">
+        <i></i>
+        online
+      </div>
+
+    </nav>
+
+
+    <!-- MAIN -->
+    <main>
+
+      <!-- HERO -->
+      <section class="hero">
+
+        <div class="hero-badge">
+          <span></span>
+          PRIVATE TEMPORARY EMAIL
+        </div>
+
+        <h2>
+          your inbox.<br>
+          <b>without the clutter.</b>
+        </h2>
+
+        <p>
+          create a temporary email instantly.
+          no signup, no password, no hassle.
+        </p>
+
+      </section>
+
+
+      <!-- EMAIL CARD -->
+      <section class="email-card">
+
+        <div class="email-top">
+
+          <div>
+            <div class="small-title">
+              YOUR TEMPORARY EMAIL
+            </div>
+
+            <div class="email-address">
+              <span id="emailAddress">
+                loading...
+              </span>
+
+              <button id="copyBtn" class="icon-btn">
+                <svg viewBox="0 0 24 24">
+                  <rect x="8" y="8" width="11" height="11" rx="2"/>
+                  <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="email-actions">
+
+            <button id="saveBtn" class="save-btn">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 4h14v17l-7-4-7 4z"/>
+              </svg>
+              <span id="saveText">Save</span>
+            </button>
+
+            <button id="newEmailBtn" class="new-btn">
+              <svg viewBox="0 0 24 24">
+                <path d="M4 12a8 8 0 0 1 14-5"/>
+                <path d="M18 4v5h-5"/>
+                <path d="M20 12a8 8 0 0 1-14 5"/>
+                <path d="M6 20v-5h5"/>
+              </svg>
+              New
+            </button>
+
+          </div>
+
+        </div>
+
+
+        <div class="email-status">
+
+          <div>
+            <span>STATUS</span>
+
+            <strong>
+              <i class="active-dot"></i>
+              Active
+            </strong>
+          </div>
+
+          <div>
+            <span>EXPIRES IN</span>
+
+            <strong id="timer">
+              10:00
+            </strong>
+          </div>
+
+          <div>
+            <span>MESSAGES</span>
+
+            <strong id="messageNumber">
+              0
+            </strong>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- CONTENT GRID -->
+      <div class="content-grid">
+
+
+        <!-- INBOX -->
+        <section class="panel inbox-panel">
+
+          <div class="panel-head">
+
+            <div>
+              <h3>Inbox</h3>
+              <p id="mailCount">
+                0 messages
+              </p>
+            </div>
+
+            <button id="refreshBtn" class="refresh-btn">
+              <svg viewBox="0 0 24 24">
+                <path d="M20 11a8 8 0 0 0-14.7-4L4 9"/>
+                <path d="M4 4v5h5"/>
+                <path d="M4 13a8 8 0 0 0 14.7 4L20 15"/>
+                <path d="M20 20v-5h-5"/>
+              </svg>
+              Refresh
+            </button>
+
+          </div>
+
+
+          <div id="mailList" class="mail-list">
+
+            <div class="empty">
+
+              <div class="empty-icon">
+                <svg viewBox="0 0 24 24">
+                  <path d="M4 5h16v14H4z"/>
+                  <path d="m4 7 8 6 8-6"/>
+                </svg>
+              </div>
+
+              <h4>inbox is empty</h4>
+
+              <p>
+                incoming emails will appear here
+              </p>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+        <!-- SAVED EMAILS -->
+        <section class="panel saved-panel">
+
+          <div class="panel-head">
+
+            <div>
+              <h3>Saved emails</h3>
+              <p id="savedCount">
+                0 saved
+              </p>
+            </div>
+
+            <div class="saved-icon">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 4h14v17l-7-4-7 4z"/>
+              </svg>
+            </div>
+
+          </div>
+
+
+          <div id="savedList" class="saved-list">
+
+            <div class="saved-empty">
+
+              <div>
+                <svg viewBox="0 0 24 24">
+                  <path d="M5 4h14v17l-7-4-7 4z"/>
+                </svg>
+              </div>
+
+              <p>
+                save an email to access it later
+              </p>
+
+            </div>
+
+          </div>
+
+        </section>
+
+      </div>
+
+
+      <!-- FEATURES -->
+      <section class="features">
+
+        <div class="feature">
+          <div class="feature-icon">01</div>
+
+          <div>
+            <b>instant</b>
+            <span>create an inbox instantly</span>
+          </div>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">02</div>
+
+          <div>
+            <b>private</b>
+            <span>no account or password needed</span>
+          </div>
+        </div>
+
+        <div class="feature">
+          <div class="feature-icon">03</div>
+
+          <div>
+            <b>saved</b>
+            <span>keep your addresses for later</span>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+
+    <footer>
+      TempMail <span>•</span> simple. private. temporary.
+    </footer>
+
+  </div>
+
+
+  <!-- MODAL -->
+  <div id="modal" class="modal">
+
+    <div class="modal-box">
+
+      <button id="closeModal" class="modal-close">
+        ×
+      </button>
+
+      <div class="modal-mail-head">
+
+        <div class="sender">
+          ✉
+        </div>
+
+        <div>
+          <h3 id="modalSubject">
+            Email
+          </h3>
+
+          <p id="modalFrom">
+            sender@example.com
+          </p>
+        </div>
+
+      </div>
+
+      <div
+        id="modalContent"
+        class="modal-content">
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- TOAST -->
+  <div id="toast" class="toast">
+    copied
+  </div>
+
+
+  <script src="script.js"></script>
+
+</body>
+</html>
