@@ -11,9 +11,7 @@ const state = {
   email: null,
   messages: [],
   saved: [],
-  timerInterval: null,
   pollInterval: null,
-  expiresIn: 10 * 60,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -85,12 +83,6 @@ function showToast(text) {
   showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
 }
 
-function formatTime(seconds) {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 function timeAgo(dateStr) {
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (diff < 60) return `${diff}s ago`;
@@ -112,7 +104,7 @@ function sleep(ms) {
 }
 
 /* =========================
-   API — 1secmail
+   API
    ========================= */
 
 async function jsonFetch(url, retries = 3) {
@@ -350,7 +342,6 @@ async function useSavedEmail(email) {
     return;
   }
 
-  stopTimer();
   clearInterval(state.pollInterval);
 
   state.login = login;
@@ -362,38 +353,10 @@ async function useSavedEmail(email) {
   updateSaveButton();
   renderMessages();
 
-  startTimer();
   startPolling();
 
   await refreshMessages(true);
   showToast("email dipakai");
-}
-
-/* =========================
-   TIMER
-   ========================= */
-
-function stopTimer() {
-  clearInterval(state.timerInterval);
-  state.timerInterval = null;
-}
-
-function startTimer() {
-  stopTimer();
-  state.expiresIn = 10 * 60;
-  timerEl.textContent = formatTime(state.expiresIn);
-
-  state.timerInterval = setInterval(() => {
-    state.expiresIn--;
-    if (state.expiresIn <= 0) {
-      stopTimer();
-      timerEl.textContent = "00:00";
-      showToast("email expired, membuat baru...");
-      createNewEmail();
-      return;
-    }
-    timerEl.textContent = formatTime(state.expiresIn);
-  }, 1000);
 }
 
 /* =========================
@@ -441,7 +404,6 @@ function startPolling() {
    ========================= */
 
 async function createNewEmail() {
-  stopTimer();
   clearInterval(state.pollInterval);
   state.messages = [];
 
@@ -462,7 +424,6 @@ async function createNewEmail() {
   emailAddressEl.textContent = email;
   updateSaveButton();
 
-  startTimer();
   startPolling();
 
   try {
