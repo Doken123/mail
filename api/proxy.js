@@ -11,7 +11,7 @@ module.exports = async function handler(req, res) {
   const target = req.query.url;
   if (!target || (!target.startsWith("https://api.mail.tm") &&
                   !target.startsWith("https://api.mail.gw"))) {
-    res.status(400).json({ error: "invalid target" });
+    res.status(400).json({ error: "invalid target", got: target || null });
     return;
   }
 
@@ -34,6 +34,10 @@ module.exports = async function handler(req, res) {
     res.setHeader("Content-Type", "application/json");
     res.send(text);
   } catch (e) {
-    res.status(500).json({ error: String(e) });
+    res.status(500).json({
+      error: String(e),
+      message: e.message,
+      target: target
+    });
   }
 };
