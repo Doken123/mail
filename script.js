@@ -110,7 +110,6 @@ function gapi(params) {
    MIME PARSER
    =================== */
 
-// decode quoted-printable
 function decodeQP(str) {
   if (!str) return "";
   return str
@@ -120,22 +119,10 @@ function decodeQP(str) {
     });
 }
 
-// ambil body setelah header part (cari baris kosong pertama)
-function bodyOf(part) {
-  const sep1 = part.indexOf("\r\n\r\n");
-  const sep2 = part.indexOf("\n\n");
-  let start = -1;
-  if (sep1 !== -1 && (sep2 === -1 || sep1 < sep2)) start = sep1 + 4;
-  else if (sep2 !== -1) start = sep2 + 2;
-  if (start === -1) return "";
-  return part.slice(start);
-}
-
-// parse MIME lengkap
 function parseMime(raw) {
   if (!raw) return { html: "", text: "" };
 
-  // buang header utama email
+  // 1) buang header utama email (sampai baris kosong pertama)
   let body = raw;
   const i1 = raw.indexOf("\r\n\r\n");
   const i2 = raw.indexOf("\n\n");
@@ -144,16 +131,18 @@ function parseMime(raw) {
   else if (i2 !== -1) cut = i2 + 2;
   if (cut !== -1) body = raw.slice(cut);
 
-  // buang <pre> wrapper
+  // 2) buang <pre> wrapper
   body = body.replace(/<\/?pre[^>]*>/gi, "");
+
+  // 3) cari boundary dari ISI body — baris "--" + 20+ karakter
+  let boundary = "";
+  const bm = body.match(/--([A-Za-z0-9=_\-]{20,})/);
+  if (bm) boundary = bm[1];
 
   let htmlPart = "";
   let textPart = "";
 
-  // cari boundary
-  const bm = raw.match(/boundary="?([^"\r\n;]+)"?/i);
-  if (bm) {
-    const boundary = bm[1];
+  if (boundary) {
     const parts = body.split("--" + boundary);
 
     parts.forEach(function (p) {
@@ -161,11 +150,19 @@ function parseMime(raw) {
       const isText = /Content-Type:\s*text\/plain/i.test(p);
       if (!isHtml && !isText) return;
 
-      let c = bodyOf(p);
-      // buang sisa penanda boundary di akhir
-      c = c.replace(/--\s*$/g, "").trim();
+      // isi setelah baris kosong pertama
+      let c = "";
+      const s1 = p.indexOf("\r\n\r\n");
+      const s2 = p.indexOf("\n\n");
+      let st = -1;
+      if (s1 !== -1 && (s2 === -1 || s1 < s2)) st = s1 + 4;
+      else if (s2 !== -1) st = s2 + 2;
+      if (st === -1) return;
+      c = p.slice(st);
 
-      // cek encoding
+      // buang penanda boundary akhir
+      c = c.replace(/\r?\n--\s*$/, "").trim();
+
       const enc = (p.match(/Content-Transfer-Encoding:\s*(\S+)/i) || [])[1] || "";
       if (/quoted-printable/i.test(enc)) c = decodeQP(c);
       else if (/base64/i.test(enc)) {
@@ -177,7 +174,7 @@ function parseMime(raw) {
     });
   }
 
-  // kalau bukan multipart
+  // 4) fallback kalau bukan multipart
   if (!htmlPart && !textPart) {
     if (/<html|<body|<div|<table|<a\s/i.test(body)) {
       const m = body.match(/<html[\s\S]*<\/html>/i);
@@ -430,14 +427,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v6") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v7") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_v6", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v7", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
