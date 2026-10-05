@@ -3,6 +3,7 @@
    ========================= */
 
 const API = "https://www.1secmail.com/api/v1/";
+const DOMAINS = ["1secmail.com", "1secmail.org", "1secmail.net"];
 
 const state = {
   login: null,
@@ -39,6 +40,41 @@ const modalContent = $("modalContent");
 const toast = $("toast");
 
 /* =========================
+   NAMA RANDOM
+   ========================= */
+
+const FIRST_NAMES = [
+  "budi","andi","rizky","dimas","fajar","gilang","hafiz","ivan","joko","kevin",
+  "lukman","made","nanda","oscar","putra","qori","raka","satria","taufik","umar",
+  "vino","wahyu","yoga","zaki","agus","bagas","candra","dewa","eka","farhan",
+  "siti","dewi","ayu","bella","citra","dinda","elisa","fitri","gita","hana",
+  "indah","jihan","kirana","lina","maya","nadia","okta","putri","ratna","sari",
+  "tika","umi","vina","wulan","yuni","zahra","alya","bunga","clara","dita",
+  "emma","fira","gina","hilda","irma","jessica","kayla","lia","mira","nisa",
+  "olivia","prisca","queen","rina","salsa","tania","ulfa","vela","wina","yola",
+  "alex","brian","chris","david","ethan","felix","george","harry","ian","jack",
+  "liam","mike","nathan","peter","quinn","ryan","sam","tom"
+];
+
+const LAST_NAMES = [
+  "santoso","wijaya","kusuma","pratama","setiawan","hidayat","nugroho","firmansyah",
+  "ramadhan","maulana","putra","permana","saputra","gunawan","halim","junaedi",
+  "kurniawan","lestari","mulyadi","nurhaliza","oktaviani","purnama","rahayu",
+  "safitri","tirtana","utami","valentina","wardani","yuliana","zulkarnain",
+  "smith","johnson","williams","brown","jones","garcia","miller","davis",
+  "rodriguez","martinez","hernandez","lopez","gonzalez","wilson","anderson",
+  "thomas","taylor","moore","jackson","martin","lee","perez","thompson",
+  "white","harris","sanchez","clark","ramirez","lewis","robinson"
+];
+
+function randomName() {
+  const first = FIRST_NAMES[Math.floor(Math.random() * FIRST_NAMES.length)];
+  const last = LAST_NAMES[Math.floor(Math.random() * LAST_NAMES.length)];
+  const num = Math.floor(Math.random() * 9000) + 100;
+  return `${first}${last}${num}`.toLowerCase();
+}
+
+/* =========================
    HELPERS
    ========================= */
 
@@ -47,15 +83,6 @@ function showToast(text) {
   toast.classList.add("show");
   clearTimeout(showToast._t);
   showToast._t = setTimeout(() => toast.classList.remove("show"), 1800);
-}
-
-function randomString(len = 10) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  for (let i = 0; i < len; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return out;
 }
 
 function formatTime(seconds) {
@@ -85,10 +112,8 @@ function sleep(ms) {
 }
 
 /* =========================
-   API — 1secmail (tanpa token)
+   API — 1secmail
    ========================= */
-
-const DOMAINS = ["1secmail.com", "1secmail.org", "1secmail.net"];
 
 async function jsonFetch(url, retries = 3) {
   let lastErr;
@@ -122,7 +147,7 @@ async function fetchMessage(id) {
 }
 
 /* =========================
-   RENDER
+   RENDER INBOX
    ========================= */
 
 function renderMessages() {
@@ -164,6 +189,10 @@ function renderMessages() {
   });
 }
 
+/* =========================
+   RENDER SAVED
+   ========================= */
+
 function renderSaved() {
   savedCountEl.textContent = `${state.saved.length} saved`;
 
@@ -181,18 +210,20 @@ function renderSaved() {
   }
 
   savedListEl.innerHTML = state.saved
-    .map(
-      (s) => `
-      <div class="saved-item" data-email="${escapeHtml(s.email)}">
+    .map((s) => {
+      const isActive = s.email === state.email;
+      return `
+      <div class="saved-item ${isActive ? "active" : ""}" data-email="${escapeHtml(s.email)}">
         <div class="saved-main">
           <strong>${escapeHtml(s.email)}</strong>
-          <span>saved ${timeAgo(s.savedAt)}</span>
+          <span>${isActive ? "● sedang dipakai" : "saved " + timeAgo(s.savedAt)}</span>
         </div>
         <div class="saved-actions">
+          <button class="use" title="Pakai email ini">↻</button>
           <button class="delete" title="Hapus">✕</button>
         </div>
-      </div>`
-    )
+      </div>`;
+    })
     .join("");
 
   savedListEl.querySelectorAll(".saved-item").forEach((el) => {
@@ -200,6 +231,10 @@ function renderSaved() {
     el.querySelector(".saved-main").addEventListener("click", () => {
       copyToClipboard(email);
       showToast("email disalin");
+    });
+    el.querySelector(".use").addEventListener("click", (e) => {
+      e.stopPropagation();
+      useSavedEmail(email);
     });
     el.querySelector(".delete").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -253,7 +288,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 /* =========================
-   SAVED
+   SAVED EMAILS
    ========================= */
 
 function loadSaved() {
@@ -292,6 +327,46 @@ function removeSaved(email) {
   state.saved = state.saved.filter((s) => s.email !== email);
   persistSaved();
   showToast("dihapus");
+}
+
+/* =========================
+   PAKAI EMAIL DARI SAVED
+   ========================= */
+
+function parseEmail(email) {
+  const [login, domain] = email.split("@");
+  return { login, domain };
+}
+
+async function useSavedEmail(email) {
+  if (email === state.email) {
+    showToast("email ini sedang dipakai");
+    return;
+  }
+
+  const { login, domain } = parseEmail(email);
+  if (!login || !domain) {
+    showToast("email tidak valid");
+    return;
+  }
+
+  stopTimer();
+  clearInterval(state.pollInterval);
+
+  state.login = login;
+  state.domain = domain;
+  state.email = email;
+  state.messages = [];
+
+  emailAddressEl.textContent = email;
+  updateSaveButton();
+  renderMessages();
+
+  startTimer();
+  startPolling();
+
+  await refreshMessages(true);
+  showToast("email dipakai");
 }
 
 /* =========================
@@ -348,13 +423,9 @@ async function refreshMessages(silent = false) {
   if (!state.login) return;
   try {
     const list = await fetchMessages();
-    // hanya render ulang kalau jumlahnya berubah biar tidak flicker
-    if (list.length !== state.messages.length || !silent) {
-      state.messages = list;
-      renderMessages();
-    } else {
-      state.messages = list;
-    }
+    const changed = list.length !== state.messages.length;
+    state.messages = list;
+    if (changed || !silent) renderMessages();
   } catch (err) {
     if (!silent) showToast("gagal refresh");
   }
@@ -370,12 +441,8 @@ function startPolling() {
    ========================= */
 
 async function createNewEmail() {
-  // reset
   stopTimer();
   clearInterval(state.pollInterval);
-  state.login = null;
-  state.domain = null;
-  state.email = null;
   state.messages = [];
 
   emailAddressEl.textContent = "loading...";
@@ -384,8 +451,7 @@ async function createNewEmail() {
   mailCountEl.textContent = "0 messages";
   renderMessages();
 
-  // bikin alamat baru (offline dulu biar tidak pernah gagal)
-  const login = randomString(12).toLowerCase();
+  const login = randomName();
   const domain = DOMAINS[Math.floor(Math.random() * DOMAINS.length)];
   const email = `${login}@${domain}`;
 
@@ -396,16 +462,12 @@ async function createNewEmail() {
   emailAddressEl.textContent = email;
   updateSaveButton();
 
-  // timer langsung jalan
   startTimer();
   startPolling();
 
-  // cek koneksi inbox (kalau server error, tetap tampil emailnya)
   try {
     await refreshMessages(true);
-  } catch (err) {
-    // diamkan — email tetap tampil
-  }
+  } catch (_) {}
 }
 
 function init() {
