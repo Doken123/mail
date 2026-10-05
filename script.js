@@ -107,7 +107,7 @@ function gapi(params) {
 }
 
 /* ===================
-   MIME PARSER
+   MIME PARSER (BRUTAL)
    =================== */
 
 function decodeQP(str) {
@@ -119,64 +119,117 @@ function decodeQP(str) {
     });
 }
 
+function tryBase64(str) {
+  try {
+    return decodeURIComponent(escape(atob(str.replace(/\s/g, ""))));
+  } catch (e) {
+    try { return atob(str.replace(/\s/g, "")); } catch (e2) { return str; }
+  }
+}
+
+function extractByContentType(body, type, boundary) {
+  // cari "Content-Type: <type>" lalu ambil setelah baris kosong,
+  // sampai boundary berikutnya (atau EOF)
+  const typeRe = new RegExp("Content-Type:\\s*" + type + "[^\\r\\n]*", "i");
+  const m = body.match(typeRe);
+  if (!m) return "";
+  const start = m.index;
+
+  // cari akhir part
+  let rest = body.slice(start);
+  // buang baris Content-Type
+  const nl = rest.search(/\r?\n/);
+  if (nl === -1) return "";
+  rest = rest.slice(nl + 1);
+
+  // skip baris header lain (Content-Transfer-Encoding, dll)
+  while (true) {
+    const lineMatch = rest.match(/^([^\r\n]+)\r?\n/);
+    if (!lineMatch) break;
+    const line = lineMatch[1];
+    // header MIME biasanya mengandung ":" (Xxx: ...)
+    if (/^[A-Za-z\-]+:\s/.test(line)) {
+      rest = rest.slice(lineMatch[0].length);
+    } else {
+      break;
+    }
+  }
+
+  // buang baris kosong pemisah
+  rest = rest.replace(/^\r?\n/, "");
+
+  // potong sampai boundary berikutnya
+  if (boundary) {
+    const re = new RegExp("\\r?\\n--" + boundary.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const end = rest.search(re);
+    if (end !== -1) rest = rest.slice(0, end);
+  }
+
+  return rest.trim();
+}
+
 function parseMime(raw) {
   if (!raw) return { html: "", text: "" };
 
-  // 1) buang header utama email (sampai baris kosong pertama)
-  let body = raw;
-  const i1 = raw.indexOf("\r\n\r\n");
-  const i2 = raw.indexOf("\n\n");
-  let cut = -1;
-  if (i1 !== -1 && (i2 === -1 || i1 < i2)) cut = i1 + 4;
-  else if (i2 !== -1) cut = i2 + 2;
-  if (cut !== -1) body = raw.slice(cut);
+  // 1) buang <pre> wrapper
+  let body = raw.replace(/<\/?pre[^>]*>/gi, "");
 
-  // 2) buang <pre> wrapper
-  body = body.replace(/<\/?pre[^>]*>/gi, "");
+  // 2) buang header email utama (kalau ada)
+  const headMatch = body.match(/^([\s\S]*?)\r?\n\r?\n/);
+  if (headMatch) {
+    const head = headMatch[1];
+    if (/^(delivered-to|received|return-path|arc-|dkim|authentication-results|mime-version|from:|to:|subject:|date:|reply-to:)/im.test(head)) {
+      body = body.slice(headMatch[0].length);
+    }
+  }
 
-  // 3) cari boundary dari ISI body — baris "--" + 20+ karakter
+  // 3) cari boundary: baris yang isinya hanya "--xxxxx" (min 15 char)
   let boundary = "";
-  const bm = body.match(/--([A-Za-z0-9=_\-]{20,})/);
+  const bm = body.match(/^\s*--([A-Za-z0-9=_\-.+]{15,})\s*$/m);
   if (bm) boundary = bm[1];
 
   let htmlPart = "";
   let textPart = "";
 
   if (boundary) {
-    const parts = body.split("--" + boundary);
-
-    parts.forEach(function (p) {
-      const isHtml = /Content-Type:\s*text\/html/i.test(p);
-      const isText = /Content-Type:\s*text\/plain/i.test(p);
-      if (!isHtml && !isText) return;
-
-      // isi setelah baris kosong pertama
-      let c = "";
-      const s1 = p.indexOf("\r\n\r\n");
-      const s2 = p.indexOf("\n\n");
-      let st = -1;
-      if (s1 !== -1 && (s2 === -1 || s1 < s2)) st = s1 + 4;
-      else if (s2 !== -1) st = s2 + 2;
-      if (st === -1) return;
-      c = p.slice(st);
-
-      // buang penanda boundary akhir
-      c = c.replace(/\r?\n--\s*$/, "").trim();
-
-      const enc = (p.match(/Content-Transfer-Encoding:\s*(\S+)/i) || [])[1] || "";
-      if (/quoted-printable/i.test(enc)) c = decodeQP(c);
-      else if (/base64/i.test(enc)) {
-        try { c = atob(c.replace(/\s/g, "")); } catch (e) {}
-      }
-
-      if (isHtml && !htmlPart) htmlPart = c;
-      if (isText && !textPart) textPart = c;
-    });
+    htmlPart = extractByContentType(body, "text\\/html", boundary);
+    textPart = extractByContentType(body, "text\\/plain", boundary);
   }
 
-  // 4) fallback kalau bukan multipart
+  // 4) fallback: kalau boundary nggak ketemu / hasil kosong, cari manual
   if (!htmlPart && !textPart) {
-    if (/<html|<body|<div|<table|<a\s/i.test(body)) {
+    const hIdx = body.search(/Content-Type:\s*text\/html/i);
+    if (hIdx !== -1) {
+      let rest = body.slice(hIdx);
+      const nl = rest.search(/\r?\n\r?\n/);
+      if (nl !== -1) rest = rest.slice(nl);
+      const end = rest.search(/\r?\n--/);
+      if (end !== -1) rest = rest.slice(0, end);
+      // buang sisa --xxxx di akhir
+      rest = rest.replace(/--[A-Za-z0-9=_\-.+]+\s*$/m, "");
+      htmlPart = rest.trim();
+    }
+    if (!htmlPart) {
+      const pIdx = body.search(/Content-Type:\s*text\/plain/i);
+      if (pIdx !== -1) {
+        let rest = body.slice(pIdx);
+        const nl = rest.search(/\r?\n\r?\n/);
+        if (nl !== -1) rest = rest.slice(nl);
+        const end = rest.search(/\r?\n--/);
+        if (end !== -1) rest = rest.slice(0, end);
+        rest = rest.replace(/--[A-Za-z0-9=_\-.+]+\s*$/m, "");
+        textPart = rest.trim();
+      }
+    }
+  }
+
+  // 5) decode quoted-printable / base64 sederhana
+  if (htmlPart && /=[0-9A-Fa-f]{2}/.test(htmlPart)) htmlPart = decodeQP(htmlPart);
+  if (textPart && /=[0-9A-Fa-f]{2}/.test(textPart)) textPart = decodeQP(textPart);
+
+  // 6) fallback terakhir: kalau nggak ada MIME sama sekali
+  if (!htmlPart && !textPart) {
+    if (/<html|<body|<div|<table|<a\s|<p[ >]|<br/i.test(body)) {
       const m = body.match(/<html[\s\S]*<\/html>/i);
       if (m) htmlPart = m[0];
       else {
@@ -234,7 +287,7 @@ function fetchMessage(id) {
     let text = "";
     let isHtml = false;
 
-    if (parsed.html && parsed.html.trim().length > 10) {
+    if (parsed.html && parsed.html.trim().length > 5) {
       text = parsed.html;
       isHtml = true;
     } else if (parsed.text && parsed.text.trim().length > 0) {
@@ -427,14 +480,14 @@ document.addEventListener("keydown", function (e) {
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v7") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_v8") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_v7", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_v8", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
