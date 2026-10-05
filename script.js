@@ -284,6 +284,7 @@ function fetchMessages() {
         id: m.mail_id,
         from: m.mail_from || "unknown",
         subject: m.mail_subject || "(no subject)",
+        excerpt: m.mail_excerpt || "",
         date: m.mail_timestamp
           ? new Date(m.mail_timestamp * 1000).toISOString()
           : new Date().toISOString(),
@@ -309,13 +310,30 @@ function fetchMessage(id) {
       .replace(/&nbsp;/g, " ")
       .trim();
 
+    // excerpt dari list (cadangan kalau body kosong)
+    let excerpt = msg.mail_excerpt || "";
+    if (!excerpt) {
+      for (let i = 0; i < state.messages.length; i++) {
+        if (String(state.messages[i].id) === String(id)) {
+          excerpt = state.messages[i].excerpt || "";
+          break;
+        }
+      }
+    }
+
     if (parsed.html && (htmlVisible.length > 0 || /<img/i.test(parsed.html))) {
       text = parsed.html;
       isHtml = true;
     } else if (parsed.text) {
       text = parsed.text;
+    } else if (excerpt.trim()) {
+      text = excerpt.trim();
     } else {
-      text = "(pesan kosong)";
+      // body bener2 kosong dari API -> tampilin info debug biar ketauan
+      text = "(pesan kosong)\n\n--- debug ---\n" +
+        "panjang mail_body: " + raw.length + "\n" +
+        "field dari API: " + Object.keys(msg).join(", ") + "\n\n" +
+        "mail_body mentah:\n" + raw.slice(0, 600);
     }
 
     return {
