@@ -1,1225 +1,434 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --bg: #06070a;
-  --card: rgba(15, 17, 23, .78);
-  --card2: rgba(19, 21, 28, .9);
-  --border: rgba(255,255,255,.08);
-  --text: #f5f6fa;
-  --muted: #7e8492;
-  --purple: #8b5cf6;
-  --purple2: #a78bfa;
-  --green: #48e29b;
-}
-
-body {
-  min-height: 100vh;
-
-  background:
-    radial-gradient(
-      circle at 50% -20%,
-      rgba(112,72,255,.12),
-      transparent 35%
-    ),
-    #06070a;
-
-  color: var(--text);
-
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    sans-serif;
-}
-
-
-/* BACKGROUND */
-
-.bg {
-  position: fixed;
-  inset: 0;
-
-  overflow: hidden;
-
-  pointer-events: none;
-
-  z-index: -1;
-}
-
-.grid {
-  position: absolute;
-  inset: 0;
-
-  opacity: .12;
-
-  background-image:
-    linear-gradient(
-      rgba(255,255,255,.035) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      rgba(255,255,255,.035) 1px,
-      transparent 1px
-    );
-
-  background-size: 55px 55px;
-
-  mask-image:
-    linear-gradient(
-      to bottom,
-      black,
-      transparent 75%
-    );
-}
-
-.orb {
-  position: absolute;
-
-  width: 450px;
-  height: 450px;
-
-  border-radius: 50%;
-
-  filter: blur(120px);
-
-  opacity: .12;
-}
-
-.orb1 {
-  background: #7545ff;
-
-  left: -250px;
-  top: 150px;
-}
-
-.orb2 {
-  background: #9c4dff;
-
-  right: -250px;
-  top: 500px;
-}
-
-
-/* APP */
-
-.app {
-  width: min(1100px, calc(100% - 32px));
-
-  margin: auto;
-
-  padding: 25px 0 30px;
-}
-
-
-/* NAV */
-
-.navbar {
-  height: 60px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  margin-bottom: 60px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand-icon {
-  width: 42px;
-  height: 42px;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  border-radius: 12px;
-
-  background:
-    linear-gradient(
-      135deg,
-      #825bff,
-      #a06aff
-    );
-
-  box-shadow:
-    0 10px 35px rgba(124,92,246,.25);
-}
-
-.brand-icon svg {
-  width: 21px;
-
-  fill: none;
-
-  stroke: white;
-
-  stroke-width: 1.7;
-}
-
-.brand h1 {
-  font-size: 17px;
-
-  letter-spacing: -.4px;
-}
-
-.brand span {
-  color: var(--muted);
-
-  font-size: 10px;
-
-  letter-spacing: .5px;
-}
-
-.online {
-  display: flex;
-  align-items: center;
-
-  gap: 7px;
-
-  color: #999fac;
-
-  font-size: 11px;
-
-  text-transform: uppercase;
-
-  letter-spacing: 1px;
-}
-
-.online i {
-  width: 6px;
-  height: 6px;
-
-  border-radius: 50%;
-
-  background: var(--green);
-
-  box-shadow:
-    0 0 12px var(--green);
-}
-
-
-/* HERO */
-
-.hero {
-  text-align: center;
-
-  max-width: 650px;
-
-  margin: auto auto 42px;
-}
-
-.hero-badge {
-  display: inline-flex;
-
-  align-items: center;
-
-  gap: 7px;
-
-  padding: 7px 11px;
-
-  border: 1px solid rgba(139,92,246,.18);
-
-  border-radius: 100px;
-
-  color: #a99fc6;
-
-  background: rgba(139,92,246,.05);
-
-  font-size: 9px;
-
-  letter-spacing: 1.2px;
-
-  margin-bottom: 18px;
-}
-
-.hero-badge span {
-  width: 5px;
-  height: 5px;
-
-  background: var(--purple2);
-
-  border-radius: 50%;
-}
-
-.hero h2 {
-  font-size: clamp(38px, 6vw, 62px);
-
-  line-height: .98;
-
-  letter-spacing: -3px;
-}
-
-.hero h2 b {
-  font-weight: 700;
-
-  background:
-    linear-gradient(
-      90deg,
-      #fff,
-      #9d7aff
-    );
-
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.hero p {
-  max-width: 430px;
-
-  margin: 18px auto 0;
-
-  color: var(--muted);
-
-  font-size: 13px;
-
-  line-height: 1.6;
-}
-
-
-/* EMAIL CARD */
-
-.email-card {
-  padding: 25px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 22px;
-
-  background:
-    linear-gradient(
-      135deg,
-      rgba(139,92,246,.07),
-      rgba(255,255,255,.025)
-    ),
-    var(--card);
-
-  backdrop-filter: blur(25px);
-
-  box-shadow:
-    0 25px 70px rgba(0,0,0,.25);
-}
-
-.email-top {
-  display: flex;
-
-  align-items: flex-end;
-
-  justify-content: space-between;
-
-  gap: 20px;
-}
-
-.small-title {
-  color: #777d8a;
-
-  font-size: 9px;
-
-  letter-spacing: 1.3px;
-
-  margin-bottom: 9px;
-}
-
-.email-address {
-  display: flex;
-
-  align-items: center;
-
-  width: min(530px, 100%);
-
-  min-height: 49px;
-
-  border: 1px solid rgba(255,255,255,.07);
-
-  background: rgba(0,0,0,.2);
-
-  border-radius: 11px;
-
-  overflow: hidden;
-}
-
-.email-address > span {
-  padding: 0 15px;
-
-  font-size: 14px;
-
-  font-weight: 600;
-
-  letter-spacing: -.2px;
-
-  white-space: nowrap;
-
-  overflow: hidden;
-
-  text-overflow: ellipsis;
-}
-
-.icon-btn {
-  width: 48px;
-  height: 49px;
-
-  flex-shrink: 0;
-
-  border: 0;
-
-  border-left: 1px solid var(--border);
-
-  background: transparent;
-
-  cursor: pointer;
-}
-
-.icon-btn svg {
-  width: 17px;
-
-  fill: none;
-
-  stroke: #9096a3;
-
-  stroke-width: 1.7;
-}
-
-.icon-btn:hover svg {
-  stroke: white;
-}
-
-.email-actions {
-  display: flex;
-
-  gap: 8px;
-}
-
-.email-actions button {
-  height: 44px;
-
-  border-radius: 10px;
-
-  padding: 0 14px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  gap: 7px;
-
-  font-size: 12px;
-
-  cursor: pointer;
-
-  transition: .2s;
-}
-
-.email-actions svg {
-  width: 15px;
-
-  fill: none;
-
-  stroke: currentColor;
-
-  stroke-width: 1.7;
-}
-
-.save-btn {
-  color: #b7a7dc;
-
-  border: 1px solid rgba(139,92,246,.2);
-
-  background: rgba(139,92,246,.07);
-}
-
-.save-btn:hover {
-  background: rgba(139,92,246,.15);
-}
-
-.save-btn.saved {
-  color: #fff;
-
-  background: rgba(139,92,246,.22);
-
-  border-color: rgba(139,92,246,.4);
-}
-
-.new-btn {
-  color: white;
-
-  border: 1px solid rgba(255,255,255,.08);
-
-  background: rgba(255,255,255,.055);
-}
-
-.new-btn:hover {
-  background: rgba(255,255,255,.1);
-}
-
-.email-status {
-  display: flex;
-
-  gap: 60px;
-
-  margin-top: 23px;
-
-  padding-top: 19px;
-
-  border-top: 1px solid var(--border);
-}
-
-.email-status > div {
-  display: flex;
-
-  flex-direction: column;
-
-  gap: 5px;
-}
-
-.email-status span {
-  color: #656b78;
-
-  font-size: 8px;
-
-  letter-spacing: 1px;
-}
-
-.email-status strong {
-  display: flex;
-
-  align-items: center;
-
-  gap: 6px;
-
-  font-size: 12px;
-}
-
-.active-dot {
-  width: 6px;
-  height: 6px;
-
-  border-radius: 50%;
-
-  background: var(--green);
-
-  box-shadow:
-    0 0 8px var(--green);
-}
-
-
-/* CONTENT */
-
-.content-grid {
-  display: grid;
-
-  grid-template-columns:
-    minmax(0, 1.5fr)
-    minmax(300px, .8fr);
-
-  gap: 18px;
-
-  margin-top: 18px;
-}
-
-.panel {
-  border: 1px solid var(--border);
-
-  border-radius: 19px;
-
-  overflow: hidden;
-
-  background: var(--card);
-
-  backdrop-filter: blur(20px);
-}
-
-.panel-head {
-  min-height: 70px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: space-between;
-
-  padding: 17px 20px;
-
-  border-bottom: 1px solid var(--border);
-}
-
-.panel-head h3 {
-  font-size: 14px;
-}
-
-.panel-head p {
-  color: var(--muted);
-
-  font-size: 10px;
-
-  margin-top: 3px;
-}
-
-.refresh-btn {
-  display: flex;
-
-  align-items: center;
-
-  gap: 6px;
-
-  padding: 8px 10px;
-
-  border-radius: 8px;
-
-  border: 1px solid var(--border);
-
-  color: #949aa7;
-
-  background: rgba(255,255,255,.035);
-
-  font-size: 10px;
-
-  cursor: pointer;
-}
-
-.refresh-btn svg {
-  width: 13px;
-
-  fill: none;
-
-  stroke: currentColor;
-
-  stroke-width: 1.7;
-}
-
-.refresh-btn:hover {
-  color: white;
-}
-
-.saved-icon {
-  width: 31px;
-  height: 31px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 9px;
-
-  background: rgba(139,92,246,.09);
-}
-
-.saved-icon svg {
-  width: 14px;
-
-  fill: none;
-
-  stroke: #9f83e9;
-
-  stroke-width: 1.6;
-}
-
-
-/* EMPTY */
-
-.empty {
-  min-height: 300px;
-
-  display: flex;
-
-  flex-direction: column;
-
-  align-items: center;
-
-  justify-content: center;
-
-  text-align: center;
-}
-
-.empty-icon {
-  width: 52px;
-  height: 52px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 15px;
-
-  background: rgba(139,92,246,.07);
-
-  margin-bottom: 13px;
-}
-
-.empty-icon svg {
-  width: 21px;
-
-  fill: none;
-
-  stroke: #8267c3;
-
-  stroke-width: 1.5;
-}
-
-.empty h4 {
-  font-size: 12px;
-}
-
-.empty p {
-  color: var(--muted);
-
-  font-size: 10px;
-
-  margin-top: 5px;
-}
-
-
-/* SAVED */
-
-.saved-list {
-  max-height: 330px;
-
-  overflow-y: auto;
-}
-
-.saved-empty {
-  min-height: 300px;
-
-  display: flex;
-
-  flex-direction: column;
-
-  align-items: center;
-
-  justify-content: center;
-
-  padding: 30px;
-
-  text-align: center;
-}
-
-.saved-empty > div {
-  width: 45px;
-  height: 45px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 13px;
-
-  background: rgba(255,255,255,.035);
-
-  margin-bottom: 12px;
-}
-
-.saved-empty svg {
-  width: 18px;
-
-  fill: none;
-
-  stroke: #656b78;
-
-  stroke-width: 1.5;
-}
-
-.saved-empty p {
-  color: var(--muted);
-
-  max-width: 180px;
-
-  font-size: 10px;
-
-  line-height: 1.5;
-}
-
-
-/* SAVED ITEM */
-
-.saved-item {
-  display: flex;
-
-  align-items: center;
-
-  gap: 10px;
-
-  padding: 13px 15px;
-
-  border-bottom: 1px solid var(--border);
-
-  transition: .2s;
-}
-
-.saved-item:hover {
-  background: rgba(255,255,255,.025);
-}
-
-.saved-main {
-  min-width: 0;
-
-  flex: 1;
-
-  cursor: pointer;
-}
-
-.saved-main strong {
-  display: block;
-
-  color: #d9dbe1;
-
-  font-size: 11px;
-
-  overflow: hidden;
-
-  text-overflow: ellipsis;
-
-  white-space: nowrap;
-}
-
-.saved-main span {
-  display: block;
-
-  color: #646a76;
-
-  font-size: 9px;
-
-  margin-top: 4px;
-}
-
-.saved-actions {
-  display: flex;
-
-  gap: 4px;
-}
-
-.saved-actions button {
-  width: 28px;
-  height: 28px;
-
-  border: 1px solid transparent;
-
-  border-radius: 7px;
-
-  color: #777d89;
-
-  background: transparent;
-
-  cursor: pointer;
-}
-
-.saved-actions button:hover {
-  color: white;
-
-  background: rgba(255,255,255,.06);
-}
-
-.saved-actions .delete:hover {
-  color: #ff6e7d;
-}
-
-
-/* MAIL */
-
-.mail {
-  display: flex;
-
-  align-items: center;
-
-  gap: 11px;
-
-  padding: 14px 19px;
-
-  border-bottom: 1px solid var(--border);
-
-  cursor: pointer;
-
-  transition: .2s;
-}
-
-.mail:hover {
-  background: rgba(255,255,255,.025);
-}
-
-.mail-icon {
-  width: 35px;
-  height: 35px;
-
-  flex-shrink: 0;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 9px;
-
-  background: rgba(139,92,246,.09);
-
-  color: #967be0;
-}
-
-.mail-info {
-  min-width: 0;
-
-  flex: 1;
-}
-
-.mail-info strong {
-  display: block;
-
-  font-size: 11px;
-
-  overflow: hidden;
-
-  white-space: nowrap;
-
-  text-overflow: ellipsis;
-}
-
-.mail-info span {
-  display: block;
-
-  color: var(--muted);
-
-  font-size: 9px;
-
-  margin-top: 3px;
-}
-
-.mail-time {
-  color: #5f6571;
-
-  font-size: 9px;
-}
-
-
-/* FEATURES */
-
-.features {
-  display: grid;
-
-  grid-template-columns:
-    repeat(3, 1fr);
-
-  gap: 10px;
-
-  margin-top: 18px;
-}
-
-.feature {
-  display: flex;
-
-  align-items: center;
-
-  gap: 11px;
-
-  padding: 14px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 13px;
-
-  background: rgba(255,255,255,.018);
-}
-
-.feature-icon {
-  width: 30px;
-  height: 30px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 8px;
-
-  color: #a58bea;
-
-  background: rgba(139,92,246,.08);
-
-  font-size: 8px;
-
-  font-weight: 700;
-}
-
-.feature b {
-  display: block;
-
-  font-size: 10px;
-
-  text-transform: uppercase;
-
-  letter-spacing: .7px;
-}
-
-.feature span {
-  display: block;
-
-  color: var(--muted);
-
-  font-size: 9px;
-
-  margin-top: 3px;
-}
-
-
-/* MODAL */
-
-.modal {
-  position: fixed;
-
-  inset: 0;
-
-  display: none;
-
-  align-items: center;
-
-  justify-content: center;
-
-  padding: 20px;
-
-  background: rgba(0,0,0,.72);
-
-  backdrop-filter: blur(10px);
-
-  z-index: 50;
-}
-
-.modal.active {
-  display: flex;
-}
-
-.modal-box {
-  position: relative;
-
-  width: min(580px, 100%);
-
-  max-height: 80vh;
-
-  overflow: auto;
-
-  padding: 24px;
-
-  border: 1px solid var(--border);
-
-  border-radius: 18px;
-
-  background: #111319;
-}
-
-.modal-close {
-  position: absolute;
-
-  top: 13px;
-  right: 13px;
-
-  width: 30px;
-  height: 30px;
-
-  border: 0;
-
-  border-radius: 8px;
-
-  color: #858b97;
-
-  background: rgba(255,255,255,.05);
-
-  cursor: pointer;
-
-  font-size: 18px;
-}
-
-.modal-mail-head {
-  display: flex;
-
-  align-items: center;
-
-  gap: 11px;
-}
-
-.sender {
-  width: 40px;
-  height: 40px;
-
-  display: flex;
-
-  align-items: center;
-
-  justify-content: center;
-
-  border-radius: 11px;
-
-  background: rgba(139,92,246,.1);
-}
-
-.modal-mail-head h3 {
-  font-size: 14px;
-}
-
-.modal-mail-head p {
-  color: var(--muted);
-
-  font-size: 10px;
-
-  margin-top: 3px;
-}
-
-.modal-content {
-  margin-top: 22px;
-
-  padding-top: 18px;
-
-  border-top: 1px solid var(--border);
-
-  color: #c5c8d0;
-
-  font-size: 12px;
-
-  line-height: 1.7;
-}
-
-
-/* TOAST */
-
-.toast {
-  position: fixed;
-
-  left: 50%;
-  bottom: 25px;
-
-  transform:
-    translate(-50%, 15px);
-
-  padding: 9px 14px;
-
-  border-radius: 8px;
-
-  background: #191b21;
-
-  border: 1px solid var(--border);
-
-  color: white;
-
-  font-size: 10px;
-
-  opacity: 0;
-
-  pointer-events: none;
-
-  transition: .2s;
-
-  z-index: 100;
-}
-
-.toast.show {
-  opacity: 1;
-
-  transform:
-    translate(-50%, 0);
-}
-
-
-/* FOOTER */
-
-footer {
-  text-align: center;
-
-  color: #505661;
-
-  font-size: 9px;
-
-  padding: 25px 0 5px;
-
-  letter-spacing: .3px;
-}
-
-footer span {
-  color: #7461a4;
-}
-
-
-/* MOBILE */
-
-@media (max-width: 760px) {
-
-  .app {
-    width: min(100% - 20px, 1100px);
-
-    padding-top: 15px;
+/* =========================
+   CONFIG
+   ========================= */
+
+const API = "https://api.mail.tm";
+
+const state = {
+  token: null,
+  accountId: null,
+  email: null,
+  messages: [],
+  saved: [],
+  timerInterval: null,
+  pollInterval: null,
+  expiresIn: 10 * 60, // detik
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* =========================
+   DOM
+   ========================= */
+
+const emailAddressEl = $("emailAddress");
+const copyBtn = $("copyBtn");
+const saveBtn = $("saveBtn");
+const saveText = $("saveText");
+const newEmailBtn = $("newEmailBtn");
+const refreshBtn = $("refreshBtn");
+const timerEl = $("timer");
+const messageNumberEl = $("messageNumber");
+const mailCountEl = $("mailCount");
+const mailListEl = $("mailList");
+const savedListEl = $("savedList");
+const savedCountEl = $("savedCount");
+
+const modal = $("modal");
+const closeModal = $("closeModal");
+const modalSubject = $("modalSubject");
+const modalFrom = $("modalFrom");
+const modalContent = $("modalContent");
+
+const toast = $("toast");
+
+/* =========================
+   HELPERS
+   ========================= */
+
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => {
+    toast.classList.remove("show");
+  }, 1800);
+}
+
+function randomString(len = 10) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  for (let i = 0; i < len; i++) {
+    out += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return out;
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function timeAgo(dateStr) {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+/* =========================
+   API
+   ========================= */
+
+async function api(path, options = {}) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+
+  if (state.token) {
+    headers.Authorization = `Bearer ${state.token}`;
   }
 
-  .navbar {
-    margin-bottom: 40px;
+  const res = await fetch(API + path, { ...options, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || `HTTP ${res.status}`);
   }
-
-  .hero {
-    margin-bottom: 30px;
-  }
-
-  .hero h2 {
-    letter-spacing: -2px;
-  }
-
-  .email-top {
-    flex-direction: column;
-
-    align-items: stretch;
-  }
-
-  .email-address {
-    width: 100%;
-  }
-
-  .email-actions {
-    width: 100%;
-  }
-
-  .email-actions button {
-    flex: 1;
-  }
-
-  .content-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .features {
-    grid-template-columns: 1fr;
-  }
-
+  return res.status === 204 ? null : res.json();
 }
 
-@media (max-width: 450px) {
-
-  .email-card {
-    padding: 18px;
-  }
-
-  .email-status {
-    gap: 25px;
-  }
-
-  .email-status strong {
-    font-size: 11px;
-  }
-
-  .email-address > span {
-    font-size: 12px;
-  }
-
+async function getDomains() {
+  const data = await api("/domains?page=1");
+  const list = data["hydra:member"] || data;
+  if (!list.length) throw new Error("No domain available");
+  return list[0].domain;
 }
+
+async function createAccount() {
+  const domain = await getDomains();
+  const address = `${randomString(10)}@${domain}`;
+  const password = randomString(16);
+
+  await api("/accounts", {
+    method: "POST",
+    body: JSON.stringify({ address, password }),
+  });
+
+  const login = await api("/token", {
+    method: "POST",
+    body: JSON.stringify({ address, password }),
+  });
+
+  state.token = login.token;
+  state.email = address;
+
+  const me = await api("/me");
+  state.accountId = me.id;
+
+  return address;
+}
+
+async function fetchMessages() {
+  const data = await api("/messages?page=1");
+  return data["hydra:member"] || data;
+}
+
+async function fetchMessage(id) {
+  return api(`/messages/${id}`);
+}
+
+async function deleteMessage(id) {
+  return api(`/messages/${id}`, { method: "DELETE" });
+}
+
+/* =========================
+   RENDER
+   ========================= */
+
+function renderMessages() {
+  const count = state.messages.length;
+  messageNumberEl.textContent = count;
+  mailCountEl.textContent = `${count} message${count !== 1 ? "s" : ""}`;
+
+  if (!count) {
+    mailListEl.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24">
+            <path d="M4 5h16v14H4z"/>
+            <path d="m4 7 8 6 8-6"/>
+          </svg>
+        </div>
+        <h4>inbox is empty</h4>
+        <p>incoming emails will appear here</p>
+      </div>`;
+    return;
+  }
+
+  mailListEl.innerHTML = state.messages
+    .map(
+      (m) => `
+      <div class="mail" data-id="${m.id}">
+        <div class="mail-icon">✉</div>
+        <div class="mail-info">
+          <strong>${escapeHtml(m.from?.address || "unknown")}</strong>
+          <span>${escapeHtml(m.subject || "(no subject)")}</span>
+        </div>
+        <div class="mail-time">${timeAgo(m.createdAt)}</div>
+      </div>`
+    )
+    .join("");
+
+  mailListEl.querySelectorAll(".mail").forEach((el) => {
+    el.addEventListener("click", () => openMessage(el.dataset.id));
+  });
+}
+
+function renderSaved() {
+  savedCountEl.textContent = `${state.saved.length} saved`;
+
+  if (!state.saved.length) {
+    savedListEl.innerHTML = `
+      <div class="saved-empty">
+        <div>
+          <svg viewBox="0 0 24 24">
+            <path d="M5 4h14v17l-7-4-7 4z"/>
+          </svg>
+        </div>
+        <p>save an email to access it later</p>
+      </div>`;
+    return;
+  }
+
+  savedListEl.innerHTML = state.saved
+    .map(
+      (s) => `
+      <div class="saved-item" data-email="${escapeHtml(s.email)}">
+        <div class="saved-main">
+          <strong>${escapeHtml(s.email)}</strong>
+          <span>saved ${timeAgo(s.savedAt)}</span>
+        </div>
+        <div class="saved-actions">
+          <button class="delete" title="Hapus">✕</button>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  savedListEl.querySelectorAll(".saved-item").forEach((el) => {
+    const email = el.dataset.email;
+    el.querySelector(".saved-main").addEventListener("click", () => {
+      switchToSaved(email);
+    });
+    el.querySelector(".delete").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeSaved(email);
+    });
+  });
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function updateSaveButton() {
+  const isSaved = state.saved.some((s) => s.email === state.email);
+  saveBtn.classList.toggle("saved", isSaved);
+  saveText.textContent = isSaved ? "Saved" : "Save";
+}
+
+/* =========================
+   MODAL
+   ========================= */
+
+async function openMessage(id) {
+  try {
+    const msg = await fetchMessage(id);
+    modalSubject.textContent = msg.subject || "(no subject)";
+    modalFrom.textContent = msg.from?.address || "unknown";
+
+    let body = "";
+    if (msg.text) {
+      body = escapeHtml(msg.text).replace(/\n/g, "<br>");
+    } else if (msg.html && msg.html.length) {
+      body = Array.isArray(msg.html) ? msg.html.join("") : msg.html;
+    } else {
+      body = "(empty message)";
+    }
+
+    modalContent.innerHTML = body;
+    modal.classList.add("active");
+  } catch (err) {
+    showToast("gagal buka pesan");
+  }
+}
+
+function closeModalFn() {
+  modal.classList.remove("active");
+}
+
+closeModal.addEventListener("click", closeModalFn);
+modal.addEventListener("click", (e) => {
+  if (e.target === modal) closeModalFn();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeModalFn();
+});
+
+/* =========================
+   SAVED
+   ========================= */
+
+function loadSaved() {
+  try {
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved") || "[]");
+  } catch {
+    state.saved = [];
+  }
+  renderSaved();
+  updateSaveButton();
+}
+
+function persistSaved() {
+  localStorage.setItem("tempmail_saved", JSON.stringify(state.saved));
+  renderSaved();
+  updateSaveButton();
+}
+
+function toggleSave() {
+  if (!state.email) return;
+  const idx = state.saved.findIndex((s) => s.email === state.email);
+  if (idx >= 0) {
+    state.saved.splice(idx, 1);
+    showToast("dihapus dari saved");
+  } else {
+    state.saved.unshift({ email: state.email, savedAt: new Date().toISOString() });
+    showToast("email disimpan");
+  }
+  persistSaved();
+}
+
+function removeSaved(email) {
+  state.saved = state.saved.filter((s) => s.email !== email);
+  persistSaved();
+  showToast("dihapus");
+}
+
+async function switchToSaved(email) {
+  // Karena mail.tm butuh password, kita hanya bisa mengingatkan
+  showToast("gunakan email ini di sesi baru");
+  copyToClipboard(email);
+}
+
+/* =========================
+   TIMER
+   ========================= */
+
+function startTimer() {
+  clearInterval(state.timerInterval);
+  state.expiresIn = 10 * 60;
+  timerEl.textContent = formatTime(state.expiresIn);
+
+  state.timerInterval = setInterval(() => {
+    state.expiresIn--;
+    if (state.expiresIn <= 0) {
+      clearInterval(state.timerInterval);
+      timerEl.textContent = "00:00";
+      createNewEmail();
+      return;
+    }
+    timerEl.textContent = formatTime(state.expiresIn);
+  }, 1000);
+}
+
+/* =========================
+   COPY
+   ========================= */
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("copied");
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    showToast("copied");
+  }
+}
+
+/* =========================
+   REFRESH / POLL
+   ========================= */
+
+async function refreshMessages(silent = false) {
+  if (!state.token) return;
+  try {
+    const list = await fetchMessages();
+    state.messages = list;
+    renderMessages();
+    if (!silent && list.length === 0) {
+      // tetap diam
+    }
+  } catch (err) {
+    if (!silent) showToast("gagal refresh");
+  }
+}
+
+function startPolling() {
+  clearInterval(state.pollInterval);
+  state.pollInterval = setInterval(() => {
+    refreshMessages(true);
+  }, 10000);
+}
+
+/* =========================
+   INIT
+   ========================= */
+
+async function createNewEmail() {
+  emailAddressEl.textContent = "loading...";
+  mailListEl.innerHTML = "";
+  state.messages = [];
+
+  try {
+    const address = await createAccount();
+    emailAddressEl.textContent = address;
+    updateSaveButton();
+    startTimer();
+    startPolling();
+    await refreshMessages(true);
+  } catch (err) {
+    emailAddressEl.textContent = "error";
+    showToast("gagal buat email");
+    console.error(err);
+  }
+}
+
+function init() {
+  loadSaved();
+
+  copyBtn.addEventListener("click", () => {
+    if (state.email) copyToClipboard(state.email);
+  });
+
+  saveBtn.addEventListener("click", toggleSave);
+
+  newEmailBtn.addEventListener("click", createNewEmail);
+
+  refreshBtn.addEventListener("click", () => refreshMessages(false));
+
+  createNewEmail();
+}
+
+document.addEventListener("DOMContentLoaded", init);
