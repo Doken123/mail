@@ -1,6 +1,5 @@
 /* ===================
-   TempMail — multi-provider
-   (mail.gw → mail.tm → guerrillamail)
+   TempMail — multi-provider + note
    =================== */
 
 const PROVIDERS = {
@@ -14,7 +13,7 @@ const state = {
   token: null,
   address: null,
   password: null,
-  sid: null,           // untuk Guerrilla
+  sid: null,
   messages: [],
   saved: [],
   pollId: null,
@@ -116,7 +115,7 @@ function qs(params) {
 }
 
 /* ===================
-   PROVIDER 1: mail.gw / mail.tm (identik)
+   PROVIDER mail.gw / mail.tm
    =================== */
 
 function mailtmApi(base, path, method, body, needToken) {
@@ -208,7 +207,7 @@ function mailtmMessage(base, id) {
 }
 
 /* ===================
-   PROVIDER 2: Guerrilla
+   PROVIDER Guerrilla
    =================== */
 
 function guerrillaApi(params) {
@@ -285,10 +284,9 @@ function guerrillaMessage(id) {
         isHtml: true,
       };
     }
-    let plain = raw
-      .replace(/=[0-9A-Fa-f]{2}/g, function (m) {
-        return String.fromCharCode(parseInt(m.slice(1), 16));
-      });
+    let plain = raw.replace(/=[0-9A-Fa-f]{2}/g, function (m) {
+      return String.fromCharCode(parseInt(m.slice(1), 16));
+    });
     return {
       subject: msg.mail_subject || "(no subject)",
       from: msg.mail_from || "unknown",
@@ -358,7 +356,7 @@ function renderMessages() {
 }
 
 /* ===================
-   SAVED RENDER
+   SAVED RENDER + NOTE
    =================== */
 
 function renderSaved() {
@@ -376,15 +374,20 @@ function renderSaved() {
   let html = "";
   state.saved.forEach(function (s) {
     const active = s.email === state.address;
+    const note = s.note ? esc(s.note) : "";
     html +=
       '<div class="saved-item ' + (active ? "active" : "") +
       '" data-email="' + esc(s.email) + '">' +
       '<div class="saved-main">' +
-      "<strong>" + esc(s.email) + "</strong>" +
+      (note
+        ? "<strong>" + note + "</strong>" +
+          "<span>" + esc(s.email) + "</span>"
+        : "<strong>" + esc(s.email) + "</strong>") +
       "<span>" + (active ? "● sedang dipakai" : "saved " + timeAgo(s.savedAt)) + "</span>" +
       "</div>" +
       '<div class="saved-actions">' +
       '<button class="use" title="Pakai">↻</button>' +
+      '<button class="rename" title="Ganti nama">✎</button>' +
       '<button class="delete" title="Hapus">✕</button>' +
       "</div></div>";
   });
@@ -398,6 +401,10 @@ function renderSaved() {
     el.querySelector(".use").addEventListener("click", function (e) {
       e.stopPropagation();
       useSavedEmail(email);
+    });
+    el.querySelector(".rename").addEventListener("click", function (e) {
+      e.stopPropagation();
+      renameSaved(email);
     });
     el.querySelector(".delete").addEventListener("click", function (e) {
       e.stopPropagation();
@@ -469,19 +476,19 @@ document.addEventListener("keydown", function (e) {
 });
 
 /* ===================
-   SAVED
+   SAVED + NOTE
    =================== */
 
 function loadSaved() {
   try {
-    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_final") || "[]");
+    state.saved = JSON.parse(localStorage.getItem("tempmail_saved_note") || "[]");
   } catch (e) { state.saved = []; }
   renderSaved();
   updateSaveButton();
 }
 
 function persistSaved() {
-  localStorage.setItem("tempmail_saved_final", JSON.stringify(state.saved));
+  localStorage.setItem("tempmail_saved_note", JSON.stringify(state.saved));
   renderSaved();
   updateSaveButton();
 }
@@ -496,16 +503,34 @@ function toggleSave() {
     state.saved.splice(idx, 1);
     showToast("dihapus dari saved");
   } else {
+    const note = prompt(
+      "Kasih nama untuk email ini (mis. FB, Gmail, Shopee):",
+      ""
+    );
     state.saved.unshift({
       provider: state.provider,
       email: state.address,
       password: state.password,
       sid: state.sid,
+      note: (note || "").trim(),
       savedAt: new Date().toISOString(),
     });
     showToast("email disimpan");
   }
   persistSaved();
+}
+
+function renameSaved(email) {
+  let found = null;
+  for (let i = 0; i < state.saved.length; i++) {
+    if (state.saved[i].email === email) { found = state.saved[i]; break; }
+  }
+  if (!found) return;
+  const now = prompt("Ganti nama email ini:", found.note || "");
+  if (now === null) return;
+  found.note = now.trim();
+  persistSaved();
+  showToast("nama diganti");
 }
 
 function removeSaved(email) {
@@ -531,6 +556,7 @@ function useSavedEmail(email) {
     state.provider = "guerrilla";
     state.sid = found.sid;
     state.address = found.email;
+    state.password = null;
     state.messages = [];
     emailAddressEl.textContent = found.email;
     updateSaveButton();
@@ -630,7 +656,6 @@ function createNewEmail() {
   messageNumberEl.textContent = "0";
   mailCountEl.textContent = "0 messages";
 
-  // Coba mail.gw → mail.tm → guerrilla, satu per satu
   mailtmCreate(PROVIDERS.MAILGW)
     .then(function (r) {
       state.provider = "mailgw";
@@ -660,7 +685,7 @@ function createNewEmail() {
       emailAddressEl.textContent = address;
 
       try {
-        localStorage.setItem("tempmail_current_final", JSON.stringify({
+        localStorage.setItem("tempmail_current_note", JSON.stringify({
           provider: state.provider,
           email: address,
           password: state.password,
@@ -692,16 +717,15 @@ function init() {
   saveBtn.addEventListener("click", toggleSave);
 
   newEmailBtn.addEventListener("click", function () {
-    try { localStorage.removeItem("tempmail_current_final"); } catch (e) {}
+    try { localStorage.removeItem("tempmail_current_note"); } catch (e) {}
     createNewEmail();
   });
 
   refreshBtn.addEventListener("click", function () { refreshMessages(false); });
 
-  // pakai email tersimpan
   let saved = null;
   try {
-    saved = JSON.parse(localStorage.getItem("tempmail_current_final") || "null");
+    saved = JSON.parse(localStorage.getItem("tempmail_current_note") || "null");
   } catch (e) {}
 
   if (saved && saved.email) {
